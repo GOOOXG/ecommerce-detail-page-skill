@@ -1,0 +1,4 @@
+interface:
+  display_name: "商品图推演与图生图分镜"
+  short_description: "从商品参考图深度推演逐张电商图生图分镜提示词，并支持可选生图"
+  default_prompt: "使用 $ecommerce-detail-page，根据商品参考图深度推演最小充分图组，先输出逐张中文图生图分镜提示词，再让我选择是否生图及每张候选数量。"
