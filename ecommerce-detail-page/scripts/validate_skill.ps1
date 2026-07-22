@@ -93,8 +93,16 @@ if (Test-Path -LiteralPath $repositoryReadmePath) {
     Require-Pattern $repositoryReadmePath 'TC-nnn / PC-nnn / RC-nnn / SC-nnn / ST-nnn / DC-nnn / FS-nnn / FR-nnn / PR-nnn' 'README合同版本顺序'
     Require-Pattern $repositoryReadmePath 'storyboard_id \+ frame_release_version \+ prompt_release_version \+ release_pair \+ source_artifact_id \+ render_variant' 'README生图结果完整追溯记录'
     Require-Pattern $repositoryReadmePath '候选图的明确选择或否定.*学习快照.*最终学习封包' 'README说明候选反馈后的学习收口'
+    Require-Pattern $repositoryReadmePath '(?m)^## 完整使用教程$' 'README完整使用教程入口'
+    Require-Pattern $repositoryReadmePath '(?s)使用前准备.*完整任务模板.*选择协作模式.*一次完整任务的流程.*提示词交付后选择是否生图.*让技能学习长期偏好.*常见问题' 'README教程覆盖完整使用链'
+    $repositoryReadmeText = Get-Content -Raw -Encoding UTF8 -LiteralPath $repositoryReadmePath
+    if ($repositoryReadmeText -match '参考架构与取舍') {
+        Add-Failure 'README仍包含已删除的参考架构与取舍章节。'
+    }
 }
 $referencePattern = [string]::Concat([char]96, '(?:references/)?([A-Za-z0-9-]+[.]md)', [char]96)
+# 该记忆文件只在用户明确授权后于项目根目录生成，不应预置在技能仓库中。
+$runtimeGeneratedMarkdownFiles = @('ecommerce-storyboard-memory.md')
 $obsoleteProcessPatterns = @(
     @{ Pattern = '事实锁'; Label = '事实锁' },
     @{ Pattern = '输出锁'; Label = '输出锁' },
@@ -120,7 +128,8 @@ foreach ($file in $textFiles) {
     $text = Get-Content -Raw -Encoding UTF8 -LiteralPath $file.FullName
     foreach ($match in [regex]::Matches($text, $referencePattern)) {
         $reference = $match.Groups[1].Value
-        if (-not (Test-Path -LiteralPath (Join-Path $referencesPath $reference))) {
+        if (($runtimeGeneratedMarkdownFiles -notcontains $reference) -and
+            -not (Test-Path -LiteralPath (Join-Path $referencesPath $reference))) {
             Add-Failure "失效引用：$($file.Name) -> $reference"
         }
     }
