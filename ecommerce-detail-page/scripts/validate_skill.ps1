@@ -7,6 +7,7 @@ $requiredFiles = @(
     'agents/openai.yaml'
     'references/product-and-reference.md'
     'references/prebuild-and-product-card.md'
+    'references/category-adaptation.md'
     'references/confirmation-workflow.md'
     'references/image-set-planning.md'
     'references/output-objects.md'
@@ -29,6 +30,7 @@ $expectedReferences = @(
     'preference-learning.md'
     'product-and-reference.md'
     'prebuild-and-product-card.md'
+    'category-adaptation.md'
     'confirmation-workflow.md'
     'prompt-writing.md'
     'render-and-repair.md'
@@ -74,9 +76,18 @@ foreach ($behavior in @(
     '固定5个综合方向',
     '逐图确认/内部自动复核',
     '2-1`到`2-10',
-    '待确认卡阶段不再提供裸数字确认菜单',
+    '不视为商品卡确认',
     '可选生图',
-    '91–100分'
+    '超过80分',
+    '写实视图确认',
+    '序列号',
+    '用户决策六维',
+    '商品决策特征',
+    '主图、SKU图、海报和详情页',
+    '证据观察 → 问题建模 → 发散候选 → 跨域组合 → 反证淘汰 → 收敛排序 → 阶段落位 → 缺口回看',
+    '静态图型库不能代替主动推演',
+    '事实与安全使用必要硬边界，创意与探索使用正向目标、可变空间和成功标准',
+    '正式交付不添加参考图索引'
 )) {
     if ($skillText -notmatch [regex]::Escape($behavior)) {
         throw "SKILL.md 缺少核心行为：$behavior"
@@ -112,9 +123,12 @@ $prebuildText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'reference
 foreach ($behavior in @(
     '识别主体 → AI预构建 → 编号建议 → 用户选择或纠正 → 商品卡（待确认） → 用户确认 → 已确认商品卡',
     '可见几何确定性30%',
-    '正式分镜只写“高置信推定/示意”或“已证实视图”',
+    '81–100分（严格超过80分）',
+    '写实视图确认',
+    '不等同于商品卡确认',
+    '不能替用户自动确认写实视图',
     '确认商品卡',
-    '待确认卡阶段不再提供裸数字确认菜单'
+    '不视为商品卡确认'
 )) {
     if ($prebuildText -notmatch [regex]::Escape($behavior)) {
         throw "预构建参考文件缺少核心规则：$behavior"
@@ -143,11 +157,117 @@ $planningText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'reference
 if ($planningText -notmatch [regex]::Escape('只在已经确认的结构内编排')) {
     throw '图片规划缺少“不得静默改结构”的边界'
 }
+foreach ($dimension in @('注意力抓取', '三秒信息效率', '信任建立', '情绪与身份', '转化驱动', '平台与无障碍适配')) {
+    if ($planningText -notmatch [regex]::Escape($dimension)) {
+        throw "图片规划缺少用户决策维度：$dimension"
+    }
+}
+foreach ($imageTypeGroup in @(
+    '商品标准呈现类',
+    '结构拆解类',
+    '细节质感类',
+    '功能验证类',
+    '参照认知类',
+    '选择适配与防错类',
+    '使用教学与维护类',
+    '场景呈现类',
+    '创意视觉类',
+    '组合、包装与到手类',
+    '信任背书与来源类',
+    '利益与行动类'
+)) {
+    if ($planningText -notmatch [regex]::Escape($imageTypeGroup)) {
+        throw "图片规划缺少候选图型能力：$imageTypeGroup"
+    }
+}
+foreach ($behavior in @(
+    '能力下限，不是类型上限',
+    '一个主任务和一个视觉中心',
+    '多个相容手法',
+    '买家问题',
+    '所需证据',
+    '生产方式',
+    '主要风险'
+)) {
+    if ($planningText -notmatch [regex]::Escape($behavior)) {
+        throw "候选图型库缺少开放扩展或调用规则：$behavior"
+    }
+}
+
+foreach ($behavior in @('推荐图型', '买家问题', '所需证据', '生产方式', '不能制作或需要降级的原因')) {
+    if ($prebuildText -notmatch [regex]::Escape($behavior)) {
+        throw "预构建图片建议缺少可执行字段：$behavior"
+    }
+}
+
+$categoryText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'references/category-adaptation.md')
+foreach ($trait in @(
+    '身份与SKU复杂度',
+    '尺寸、适配与空间风险',
+    '结构与功能解释难度',
+    '效果与主张证据敏感度',
+    '使用、安装与维护成本',
+    '安全、合规与人群风险',
+    '感官、审美与情绪依赖',
+    '包装、交付与服务复杂度'
+)) {
+    if ($categoryText -notmatch [regex]::Escape($trait)) {
+        throw "全行业适配缺少商品决策特征：$trait"
+    }
+}
+foreach ($phase in @('AI预构建初筛', '商品卡确认后正式调用', '待确认假设')) {
+    if ($categoryText -notmatch [regex]::Escape($phase)) {
+        throw "全行业适配缺少两阶段调用规则：$phase"
+    }
+}
+foreach ($outputObject in @('主图', 'SKU图', '海报', '详情页')) {
+    if ($categoryText -notmatch [regex]::Escape($outputObject)) {
+        throw "全行业适配缺少输出对象：$outputObject"
+    }
+}
+foreach ($categoryFamily in @(
+    '服饰鞋包与珠宝配饰',
+    '美妆个护、食品饮料与健康相关商品',
+    '数码3C、家电与智能设备',
+    '家居家具、收纳与空间用品',
+    '工具五金、汽配与工业品',
+    '母婴、宠物与安全敏感商品',
+    '户外、运动与穿戴装备',
+    '礼赠、收藏与高价值商品',
+    '耗材、补充装与周期购商品',
+    '虚拟商品、数字内容与服务权益'
+)) {
+    if ($categoryText -notmatch [regex]::Escape($categoryFamily)) {
+        throw "全行业适配缺少类目族：$categoryFamily"
+    }
+}
+
+$templateText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'references/storyboard-template.md')
+foreach ($behavior in @('参考图使用', '不输出参考图索引', '不写固定参考图编号')) {
+    if ($templateText -notmatch [regex]::Escape($behavior)) {
+        throw "最终分镜模板缺少动态参考图规则：$behavior"
+    }
+}
 
 $readmeText = Get-Content -Raw -Encoding UTF8 (Join-Path (Split-Path $skillRoot -Parent) 'README.md')
 foreach ($tutorialHeading in @('## 第一步：图片识别', '## 第四步：生成并确认商品卡', '## 第七步：逐张分镜提示词', '## 第八步：可选生图', '## 常见问题')) {
     if ($readmeText -notmatch [regex]::Escape($tutorialHeading)) {
         throw "README 缺少使用教程章节：$tutorialHeading"
+    }
+}
+
+$liveMarkdown = @($readmeText, $skillText)
+$liveMarkdown += Get-ChildItem -LiteralPath (Join-Path $skillRoot 'references') -File -Filter '*.md' |
+    ForEach-Object { Get-Content -Raw -Encoding UTF8 $_.FullName }
+$liveText = $liveMarkdown -join "`n"
+foreach ($legacy in @('91–100分', '0–90分', '高于90分', '高置信推定/示意')) {
+    if ($liveText -match [regex]::Escape($legacy)) {
+        throw "仍保留旧隐藏视图规则：$legacy"
+    }
+}
+foreach ($legacyField in @('### 参考图索引', '商品身份参考图', '画面主参考图', '辅助参考图', '身份母图', '参考图职责', '身份参考图', '参考图绑定')) {
+    if ($liveText -match [regex]::Escape($legacyField)) {
+        throw "仍保留旧参考图输出字段：$legacyField"
     }
 }
 

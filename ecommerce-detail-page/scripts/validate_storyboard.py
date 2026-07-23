@@ -13,8 +13,7 @@ REQUIRED_FIELDS = (
     "输出对象",
     "成图任务",
     "画布与布局",
-    "商品身份参考图",
-    "画面主参考图",
+    "参考图使用",
     "商品锁定",
     "允许变化",
     "视角与事实边界",
@@ -23,7 +22,7 @@ REQUIRED_FIELDS = (
     "光影、材质与色彩",
     "生产与后期",
 )
-OPTIONAL_FIELDS = ("辅助参考图", "场景与人物", "最终文案")
+OPTIONAL_FIELDS = ("场景与人物", "最终文案")
 ALLOWED_FIELDS = set(REQUIRED_FIELDS + OPTIONAL_FIELDS)
 OUTPUT_ID_PREFIXES = {
     "主图": "主图",
@@ -39,7 +38,6 @@ HEADING_RE = re.compile(
     r"^## 第(?P<page>\d+)张（(?P<storyboard_id>[A-Za-z0-9\u4e00-\u9fff]+-\d{2,})）：(?P<title>\S.*)$",
     re.MULTILINE,
 )
-REFERENCE_RE = re.compile(r"^- (参考图\d+)：(.+)$", re.MULTILINE)
 FIELD_RE = re.compile(r"^- ([^\n：]+)：[ \t]*(.*)$", re.MULTILINE)
 QUANTITY_NOTE_RE = re.compile(
     r"^> 数量说明：(?=.*(?:\d+|[零〇一二三四五六七八九十百千万两]+)\s*张)\S.*$"
@@ -52,7 +50,30 @@ NEGATIVE_RE = re.compile(
     r"^- ⚠️ 动态负面提示词：\s*\n```text\n(?P<text>.+?)\n```\s*$",
     re.MULTILINE | re.DOTALL,
 )
-REFERENCE_TOKEN_RE = re.compile(r"参考图\d+")
+FIXED_REFERENCE_RE = re.compile(r"参考图\s*\d+")
+REFERENCE_SCOPE_PATTERNS = {
+    "单张": re.compile(r"(?:单张|一张)[^，。；\n]{0,16}参考图|参考图[^，。；\n]{0,16}(?:单张|一张)"),
+    "多张": re.compile(r"多张[^，。；\n]{0,16}参考图|参考图[^，。；\n]{0,16}多张"),
+    "全部": re.compile(r"(?:全部|所有)(?:有效)?参考图"),
+}
+REFERENCE_PURPOSE_RE = re.compile(
+    r"(?:商品身份|商品特征|SKU|几何|结构|轮廓|颜色|材质|文字|包装|配件|尺度|场景|细节|共同特征|正面)"
+)
+REFERENCE_TARGET_FILTER_RE = re.compile(
+    r"(?:(?:按|依据|围绕)[^，。；\n]{0,20}(?:目标\s*SKU(?:/状态)?|各\s*SKU)[^，。；\n]{0,20}(?:筛选|分别)|"
+    r"(?:目标\s*SKU(?:/状态)?|各\s*SKU)[^，。；\n]{0,20}(?:筛选|限定|匹配|分别提取)|"
+    r"(?:只|仅)[^，。；\n]{0,12}(?:(?:目标|当前|对应)\s*SKU(?:/状态)?|各\s*SKU)|"
+    r"(?:目标|当前|对应)\s*SKU(?:/状态)?[^，。；\n]{0,16}(?:有效|一致|对应)(?:参考|证据|内容|资料))"
+)
+REFERENCE_SKU_ISOLATION_RE = re.compile(
+    r"(?:同一目标\s*SKU|同一\s*SKU|同\s*SKU|"
+    r"(?:只|仅)[^，。；\n]{0,12}(?:目标|当前|对应)\s*SKU|"
+    r"(?:其他|不同)\s*SKU[^，。；\n]{0,30}(?:仅用于|只用于|差异|防串款|隔离|不(?:得|做)?融合))"
+)
+REFERENCE_CONFLICT_RE = re.compile(
+    r"(?:(?:冲突|矛盾|不一致)[^，。；\n]{0,30}(?:已确认)?商品卡|"
+    r"(?:已确认)?商品卡[^，。；\n]{0,30}(?:冲突|矛盾|不一致|为准|裁决))"
+)
 CHINESE_RE = re.compile(r"[\u3400-\u9fff]")
 LATIN_RE = re.compile(r"[A-Za-z]")
 
@@ -72,6 +93,15 @@ FORBIDDEN_SECRET_RE = re.compile(
 FORBIDDEN_INTERNAL_RE = re.compile(
     r"(?:内部评分|候选(?:方案|比较)|角色(?:讨论|名称)|(?:循环|推演)(?:日志|记录)|"
     r"模型名|测试(?:标签|文字)|审查状态|调试字段|未采用方案|确认记录|隐藏思考链)"
+)
+FORBIDDEN_VIEW_ANNOTATION_RE = re.compile(
+    r"(?:置信度(?:\s*\d+分?)?|高置信|推定|(?:背面|底部|内部|拆解)\s*[：:]?\s*(?:为|标注为|按|作为)?\s*示意(?:图)?)"
+)
+SKU_FUSION_RE = re.compile(
+    r"(?i)(?:(?:融合|混合|平均)(?:多个|不同)?\s*SKU|(?:多个|不同)\s*SKU(?:进行)?(?:融合|混合|平均))"
+)
+NEGATED_SKU_FUSION_PREFIX_RE = re.compile(
+    r"(?:不(?:要|得|应|可|能|允许)?|禁止|避免|防止|杜绝|无须|无需)[^，。；\n]{0,24}$"
 )
 PLACEHOLDER_RE = re.compile(r"(?:TODO|TBD|待定|待补|省略号|【(?:名称|内容|填写|待补)[^】]*】|\.\.\.)", re.IGNORECASE)
 
@@ -106,35 +136,35 @@ def _erase_spans(text: str, spans: list[tuple[int, int]]) -> str:
     return "".join(characters)
 
 
-def _parse_preamble(preamble: str) -> list[str]:
+def _parse_preamble(preamble: str) -> None:
     lines = [line.strip() for line in preamble.splitlines() if line.strip()]
-    if lines.count("### 参考图索引") != 1:
-        raise StoryboardValidationError("必须且只能包含一个参考图索引标题")
-
-    index_position = lines.index("### 参考图索引")
-    before_index = lines[:index_position]
-    if before_index and (
-        len(before_index) != 1 or not QUANTITY_NOTE_RE.fullmatch(before_index[0])
-    ):
-        raise StoryboardValidationError("参考图索引前只允许一行“> 数量说明：……”")
-
-    reference_lines = lines[index_position + 1 :]
-    if not reference_lines:
-        raise StoryboardValidationError("参考图索引不能为空")
-
-    references: list[str] = []
-    for line in reference_lines:
-        match = REFERENCE_RE.fullmatch(line)
-        if match is None:
-            raise StoryboardValidationError("参考图索引中包含未允许的文字或标题")
-        references.append(match.group(1))
-    return references
+    if not lines:
+        return
+    if len(lines) != 1 or not QUANTITY_NOTE_RE.fullmatch(lines[0]):
+        raise StoryboardValidationError("分镜前只允许一行“> 数量说明：……”；不得添加参考图索引或额外报告")
 
 
 def _is_mainly_chinese(text: str) -> bool:
     chinese_count = len(CHINESE_RE.findall(text))
     latin_count = len(LATIN_RE.findall(text))
     return chinese_count > 0 and chinese_count * 2 >= latin_count * 3
+
+
+def _reference_mode(text: str) -> str | None:
+    matches = [name for name, pattern in REFERENCE_SCOPE_PATTERNS.items() if pattern.search(text)]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _contains_asserted_sku_fusion(text: str) -> bool:
+    """只拦截肯定执行的跨SKU融合，允许负面提示词明确禁止它。"""
+
+    for match in SKU_FUSION_RE.finditer(text):
+        clause_start = max(text.rfind(separator, 0, match.start()) for separator in "，。；\n") + 1
+        prefix = text[clause_start : match.start()]
+        if NEGATED_SKU_FUSION_PREFIX_RE.search(prefix):
+            continue
+        return True
+    return False
 
 
 def _frame_blocks(markdown: str) -> list[tuple[re.Match[str], str]]:
@@ -158,22 +188,23 @@ def validate_storyboard(markdown: str, *, partial: bool = False) -> list[str]:
         normalized = normalized.removeprefix("````markdown\n").removesuffix("\n````").strip()
 
     blocks = _frame_blocks(normalized)
-    references = _parse_preamble(normalized[: blocks[0][0].start()])
-    if not references or len(references) != len(set(references)):
-        raise StoryboardValidationError("参考图索引必须非空且编号不能重复")
-    reference_set = set(references)
+    _parse_preamble(normalized[: blocks[0][0].start()])
 
     if FORBIDDEN_SECRET_RE.search(normalized):
         raise StoryboardValidationError("最终分镜疑似包含凭证或私钥")
     if FORBIDDEN_INTERNAL_RE.search(normalized):
         raise StoryboardValidationError("最终分镜包含内部评分、审查过程或测试信息")
+    if FORBIDDEN_VIEW_ANNOTATION_RE.search(normalized):
+        raise StoryboardValidationError("最终分镜不得出现置信度或视图推断性质标签")
+    if _contains_asserted_sku_fusion(normalized):
+        raise StoryboardValidationError("最终分镜不得融合、混合或平均多个SKU")
+    if FIXED_REFERENCE_RE.search(normalized):
+        raise StoryboardValidationError("最终分镜不得使用固定参考图编号；应综合说明单张、多张或全部参考图的使用方式")
     if PLACEHOLDER_RE.search(normalized):
         raise StoryboardValidationError("最终分镜包含占位符或省略内容")
 
     pages: list[int] = []
     storyboard_ids: list[str] = []
-    used_references: set[str] = set()
-
     for heading, block in blocks:
         page = int(heading.group("page"))
         storyboard_id = heading.group("storyboard_id")
@@ -223,35 +254,38 @@ def validate_storyboard(markdown: str, *, partial: bool = False) -> list[str]:
 
         if not _is_mainly_chinese(positive) or not _is_mainly_chinese(negative):
             raise StoryboardValidationError(f"{storyboard_id}的正向与负面提示词必须以自然中文为主")
-
-        declared_references: set[str] = set()
-        for reference_field in ("商品身份参考图", "画面主参考图", "辅助参考图"):
-            field_references = set(REFERENCE_TOKEN_RE.findall(fields.get(reference_field, "")))
-            if reference_field != "辅助参考图" and not field_references:
-                raise StoryboardValidationError(f"{storyboard_id}的{reference_field}没有真实参考图编号")
-            declared_references.update(field_references)
-
-        frame_references = set(REFERENCE_TOKEN_RE.findall(block))
-        unknown_references = frame_references - reference_set
-        if unknown_references:
+        reference_usage = fields["参考图使用"]
+        field_mode = _reference_mode(reference_usage)
+        prompt_mode = _reference_mode(positive)
+        if (
+            "参考图" not in reference_usage
+            or "参考图" not in positive
+            or field_mode is None
+            or prompt_mode is None
+            or not REFERENCE_PURPOSE_RE.search(reference_usage)
+            or not REFERENCE_PURPOSE_RE.search(positive)
+        ):
             raise StoryboardValidationError(
-                f"{storyboard_id}引用了索引中不存在的图片：{'、'.join(sorted(unknown_references))}"
+                f"{storyboard_id}必须在参考图使用字段和正向提示词中明确选择单张、多张或全部参考图，并说明提取用途"
             )
-
-        undeclared_references = frame_references - declared_references
-        if undeclared_references:
+        if field_mode != prompt_mode:
             raise StoryboardValidationError(
-                f"{storyboard_id}使用了未说明职责的参考图：{'、'.join(sorted(undeclared_references))}"
+                f"{storyboard_id}的参考图使用字段与正向提示词范围不一致：{field_mode} / {prompt_mode}"
             )
-
-        positive_references = set(REFERENCE_TOKEN_RE.findall(positive))
-        missing_prompt_references = declared_references - positive_references
-        if missing_prompt_references:
-            raise StoryboardValidationError(
-                f"{storyboard_id}的正向提示词没有绑定已声明参考图："
-                f"{'、'.join(sorted(missing_prompt_references))}"
-            )
-        used_references.update(declared_references)
+        if field_mode in {"多张", "全部"}:
+            for location, value in (("参考图使用字段", reference_usage), ("正向提示词", positive)):
+                if not REFERENCE_TARGET_FILTER_RE.search(value):
+                    raise StoryboardValidationError(
+                        f"{storyboard_id}的{location}使用多张或全部参考图时，必须说明按目标SKU/状态筛选或按各SKU分别提取"
+                    )
+                if not REFERENCE_SKU_ISOLATION_RE.search(value):
+                    raise StoryboardValidationError(
+                        f"{storyboard_id}的{location}使用多张或全部参考图时，必须说明同一目标SKU内互补，或其他SKU只用于差异与防串款"
+                    )
+                if not REFERENCE_CONFLICT_RE.search(value):
+                    raise StoryboardValidationError(
+                        f"{storyboard_id}的{location}使用多张或全部参考图时，必须说明冲突服从已确认商品卡"
+                    )
 
     if len(pages) != len(set(pages)):
         raise StoryboardValidationError("页码不能重复")
@@ -261,11 +295,6 @@ def validate_storyboard(markdown: str, *, partial: bool = False) -> list[str]:
     elif pages != list(range(1, len(pages) + 1)):
         raise StoryboardValidationError("完整图组页码必须从1连续递增")
 
-    unused_references = reference_set - used_references
-    if unused_references:
-        raise StoryboardValidationError(
-            f"参考图索引包含正文未使用的图片：{'、'.join(sorted(unused_references))}"
-        )
     return storyboard_ids
 
 
