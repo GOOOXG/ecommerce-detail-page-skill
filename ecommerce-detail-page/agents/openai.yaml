@@ -1,4 +1,4 @@
 interface:
   display_name: "商品图推演与图生图分镜"
-  short_description: "从商品参考图深度推演逐张电商图生图分镜提示词，并支持可选生图"
-  default_prompt: "使用 $ecommerce-detail-page，根据商品参考图判断真正需要制作哪些图片，先输出逐张中文图生图分镜提示词，再让我选择是否生图及每张生成数量。"
+  short_description: "先确认商品资料，再生成逐张中文图生图分镜提示词"
+  default_prompt: "使用 $ecommerce-detail-page，先识别商品主体并给出AI预构建建议，让我数字选择或纠正后生成已确认商品卡，再输出逐张中文图生图分镜提示词；提示词完成后再由我选择是否生图及每张数量。"

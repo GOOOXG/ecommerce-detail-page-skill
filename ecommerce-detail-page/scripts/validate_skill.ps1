@@ -6,6 +6,7 @@ $requiredFiles = @(
     'SKILL.md'
     'agents/openai.yaml'
     'references/product-and-reference.md'
+    'references/prebuild-and-product-card.md'
     'references/image-set-planning.md'
     'references/output-objects.md'
     'references/visual-direction.md'
@@ -26,6 +27,7 @@ $expectedReferences = @(
     'output-objects.md'
     'preference-learning.md'
     'product-and-reference.md'
+    'prebuild-and-product-card.md'
     'prompt-writing.md'
     'render-and-repair.md'
     'safety-and-quality.md'
@@ -55,6 +57,37 @@ $skillText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'SKILL.md')
 foreach ($referenceName in $expectedReferences) {
     if ($skillText -notmatch [regex]::Escape("references/$referenceName")) {
         throw "SKILL.md 未按需路由到：references/$referenceName"
+    }
+}
+
+foreach ($behavior in @(
+    '识别商品主体',
+    'AI预构建',
+    '数字选择/手动纠正',
+    '已确认商品卡',
+    '可选生图',
+    '91–100分'
+)) {
+    if ($skillText -notmatch [regex]::Escape($behavior)) {
+        throw "SKILL.md 缺少核心行为：$behavior"
+    }
+}
+
+$prebuildText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'references/prebuild-and-product-card.md')
+foreach ($behavior in @(
+    '识别主体 → AI预构建 → 编号建议 → 用户选择或纠正 → 已确认商品卡',
+    '可见几何确定性30%',
+    '正式分镜只写“高置信推定/示意”或“已证实视图”'
+)) {
+    if ($prebuildText -notmatch [regex]::Escape($behavior)) {
+        throw "预构建参考文件缺少核心规则：$behavior"
+    }
+}
+
+$readmeText = Get-Content -Raw -Encoding UTF8 (Join-Path (Split-Path $skillRoot -Parent) 'README.md')
+foreach ($tutorialHeading in @('## 第一步：图片识别', '## 第七步：可选生图', '## 常见问题')) {
+    if ($readmeText -notmatch [regex]::Escape($tutorialHeading)) {
+        throw "README 缺少使用教程章节：$tutorialHeading"
     }
 }
 
