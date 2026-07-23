@@ -9,6 +9,7 @@ $requiredFiles = @(
     'references/prebuild-and-product-card.md'
     'references/category-adaptation.md'
     'references/confirmation-workflow.md'
+    'references/image-type-index.md'
     'references/image-set-planning.md'
     'references/output-objects.md'
     'references/visual-direction.md'
@@ -26,6 +27,7 @@ $requiredFiles = @(
 $expectedReferences = @(
     'enhancements.md'
     'image-set-planning.md'
+    'image-type-index.md'
     'output-objects.md'
     'preference-learning.md'
     'product-and-reference.md'
@@ -81,13 +83,17 @@ foreach ($behavior in @(
     '超过80分',
     '写实视图确认',
     '序列号',
+    '真实存在、与当前任务有关且缺少同SKU直接证据',
     '用户决策六维',
     '商品决策特征',
     '主图、SKU图、海报和详情页',
     '证据观察 → 问题建模 → 发散候选 → 跨域组合 → 反证淘汰 → 收敛排序 → 阶段落位 → 缺口回看',
     '静态图型库不能代替主动推演',
     '事实与安全使用必要硬边界，创意与探索使用正向目标、可变空间和成功标准',
-    '正式交付不添加参考图索引'
+    '正式交付不添加参考图索引',
+    '数字权益或服务商品',
+    '其他SKU默认不作为生成参考输入',
+    '不能把“以商品卡为准”留给看不到商品卡的生图模型'
 )) {
     if ($skillText -notmatch [regex]::Escape($behavior)) {
         throw "SKILL.md 缺少核心行为：$behavior"
@@ -146,6 +152,8 @@ foreach ($behavior in @(
     '2-1',
     '2-10',
     '剩余自动完成',
+    '摘要只作透明记录，不等待再次回复',
+    '同一轮直接进入结构首推',
     '候选图片数量'
 )) {
     if ($workflowText -notmatch [regex]::Escape($behavior)) {
@@ -175,9 +183,17 @@ foreach ($imageTypeGroup in @(
     '组合、包装与到手类',
     '信任背书与来源类',
     '利益与行动类'
+    '数字权益与服务交付类'
 )) {
     if ($planningText -notmatch [regex]::Escape($imageTypeGroup)) {
         throw "图片规划缺少候选图型能力：$imageTypeGroup"
+    }
+}
+
+$indexText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'references/image-type-index.md')
+foreach ($behavior in @('商品卡确认前使用', '十三类发现入口', '数字权益与服务交付', '不是上限')) {
+    if ($indexText -notmatch [regex]::Escape($behavior)) {
+        throw "预构建候选图型导航缺少轻量路由规则：$behavior"
     }
 }
 foreach ($behavior in @(
@@ -243,9 +259,16 @@ foreach ($categoryFamily in @(
 }
 
 $templateText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'references/storyboard-template.md')
-foreach ($behavior in @('参考图使用', '不输出参考图索引', '不写固定参考图编号')) {
+foreach ($behavior in @('参考图使用', '不输出参考图索引', '不写固定参考图编号', '本张实际向生成模型提供', '不能只留下“服从商品卡”')) {
     if ($templateText -notmatch [regex]::Escape($behavior)) {
         throw "最终分镜模板缺少动态参考图规则：$behavior"
+    }
+}
+
+$renderText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'references/render-and-repair.md')
+foreach ($behavior in @('等价序列化', '工具只支持一张参考图时', '其他SKU图片', '真实透明通道')) {
+    if ($renderText -notmatch [regex]::Escape($behavior)) {
+        throw "可选生图缺少能力适配规则：$behavior"
     }
 }
 

@@ -21,16 +21,16 @@ FIXTURE = ROOT / "tests" / "fixtures" / "valid_storyboard.md"
 def make_frame(
     page: int,
     storyboard_id: str,
-    reference_usage: str = "综合使用本次全部有效参考图，按目标SKU/状态筛选共同商品特征，其他SKU仅用于差异和防串款，冲突服从已确认商品卡",
+    reference_usage: str = "已分析全部有效参考视觉；本张实际向生成模型提供全部同款参考图，按目标SKU/状态筛选共同商品特征，其他SKU不作为生成参考输入，同款资料一致，无需裁决",
     prompt_reference_usage: str | None = None,
 ) -> str:
     if prompt_reference_usage is None:
         if "一张" in reference_usage or "单张" in reference_usage:
             prompt_reference_usage = "只使用当前最清晰的一张参考图提取商品身份、正面几何和共同特征"
         elif "多张" in reference_usage:
-            prompt_reference_usage = "综合使用多张有效参考图，按目标SKU/状态筛选商品身份、几何、颜色和局部细节，确认内容属于同一目标SKU，冲突服从已确认商品卡"
+            prompt_reference_usage = "本张实际向生成模型提供多张同款参考图，按目标SKU/状态筛选商品身份、几何、颜色和局部细节，确认内容属于同一目标SKU，同款资料一致，无需裁决"
         else:
-            prompt_reference_usage = "综合使用本次全部有效参考图，按目标SKU/状态筛选商品身份、正面几何和共同特征，其他SKU仅用于差异和防串款，冲突服从已确认商品卡"
+            prompt_reference_usage = "本张实际向生成模型提供全部同款参考图，按目标SKU/状态筛选商品身份、正面几何和共同特征，其他SKU不作为生成参考输入，同款资料一致，无需裁决"
     return f"""## 第{page}张（{storyboard_id}）：商品识别
 - 输出对象：【主图】
 - 成图任务：【清楚建立商品识别】
@@ -77,11 +77,11 @@ class StoryboardValidatorTests(unittest.TestCase):
     def test_multiple_frames_can_choose_different_reference_usage(self) -> None:
         markdown = make_storyboard(
             [
-                make_frame(1, "主图-01", "只使用当前最清晰的一张正面参考图"),
+                make_frame(1, "主图-01", "已分析全部有效参考视觉；本张实际只使用当前最清晰的一张正面参考图提取商品身份与几何"),
                 make_frame(
                     2,
                     "主图-02",
-                    "综合使用多张有效参考图，按目标SKU/状态筛选结构、颜色和局部细节，确认内容属于同一目标SKU，冲突服从已确认商品卡",
+                    "已分析全部参考视觉；本张实际向生成模型提供多张同款参考图，按目标SKU/状态筛选结构、颜色和局部细节，确认内容属于同一目标SKU，同款资料一致，无需裁决",
                 ),
             ],
         )
@@ -91,26 +91,45 @@ class StoryboardValidatorTests(unittest.TestCase):
         frame = make_frame(
             1,
             "主图-01",
-            "综合使用多张有效参考图，按目标SKU/状态筛选身份、结构和颜色，确认内容属于同一目标SKU，冲突服从已确认商品卡",
-            "综合使用多张有效参考图，按目标SKU/状态筛选商品身份、结构和颜色，确认内容属于同一目标SKU，冲突服从已确认商品卡",
+            "已分析全部参考视觉；本张实际向生成模型提供多张同款参考图，按目标SKU/状态筛选身份、结构和颜色，确认内容属于同一目标SKU，同款资料一致，无需裁决",
+            "本张实际向生成模型提供多张同款参考图，按目标SKU/状态筛选商品身份、结构和颜色，确认内容属于同一目标SKU，同款资料一致，无需裁决",
         )
+        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_explicit_reference_conflict_adoption_and_rejection_is_valid(self) -> None:
+        usage = (
+            "已分析全部参考视觉；本张实际向生成模型提供多张同款参考图，按目标SKU筛选商品身份、结构和颜色，"
+            "其他SKU不作为生成参考输入；同款资料存在颜色冲突，最终采用清晰正面资料中的深蓝杯身，舍弃偏色照片中的青色外观"
+        )
+        frame = make_frame(1, "主图-01", usage, usage)
         self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
 
     def test_all_reference_multi_sku_usage_is_valid(self) -> None:
         frame = make_frame(
             1,
             "主图-01",
-            "综合使用本次全部有效参考图，按各SKU分别筛选身份、结构与颜色，其他SKU仅用于差异和防串款，冲突服从已确认商品卡",
-            "综合使用本次全部有效参考图，按各SKU分别筛选商品身份、结构与颜色，其他SKU仅用于差异和防串款，冲突服从已确认商品卡",
+            "已分析全部参考视觉；本张实际向生成模型提供全部可用参考图，按各SKU分别筛选身份、结构与颜色，各SKU使用独立商品层后期合成，同款资料一致，无需裁决",
+            "本张实际向生成模型提供全部可用参考图，按各SKU分别筛选商品身份、结构与颜色，各SKU分别使用独立商品层后期合成，同款资料一致，无需裁决",
         )
         self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_all_reference_scope_accepts_natural_modifiers(self) -> None:
+        terms = ("全部用户提供的权益页面截图", "全部真实界面截图")
+        for term in terms:
+            with self.subTest(term=term):
+                usage = (
+                    f"已分析{term}；本张实际向生成模型提供{term}，按目标版本筛选真实界面、权益和交付流程，"
+                    "同一版本内互补，同款资料一致，无需裁决"
+                )
+                frame = make_frame(1, "主图-01", usage, usage)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
 
     def test_multi_reference_field_requires_target_sku_filter(self) -> None:
         frame = make_frame(
             1,
             "主图-01",
-            "综合使用本次全部有效参考图提取商品身份、结构与颜色，其他SKU仅用于差异和防串款，冲突服从已确认商品卡",
-            "综合使用本次全部有效参考图，按目标SKU/状态筛选商品身份、结构与颜色，其他SKU仅用于差异和防串款，冲突服从已确认商品卡",
+            "已分析全部参考视觉；本张实际向生成模型提供全部同款参考图提取商品身份、结构与颜色，其他SKU不作为生成参考输入，同款资料一致，无需裁决",
+            "已分析全部参考视觉；本张实际向生成模型提供全部同款参考图，按目标SKU/状态筛选商品身份、结构与颜色，其他SKU不作为生成参考输入，同款资料一致，无需裁决",
         )
         with self.assertRaises(StoryboardValidationError):
             validate_storyboard(make_storyboard([frame]))
@@ -119,8 +138,8 @@ class StoryboardValidatorTests(unittest.TestCase):
         frame = make_frame(
             1,
             "主图-01",
-            "综合使用本次全部有效参考图，按目标SKU/状态筛选商品身份、结构与颜色，其他SKU仅用于差异和防串款，冲突服从已确认商品卡",
-            "综合使用本次全部有效参考图提取商品身份、结构与颜色，其他SKU仅用于差异和防串款，冲突服从已确认商品卡",
+            "本张实际向生成模型提供全部同款参考图，按目标SKU/状态筛选商品身份、结构与颜色，其他SKU不作为生成参考输入，同款资料一致，无需裁决",
+            "本张实际向生成模型提供全部同款参考图提取商品身份、结构与颜色，其他SKU不作为生成参考输入，同款资料一致，无需裁决",
         )
         with self.assertRaises(StoryboardValidationError):
             validate_storyboard(make_storyboard([frame]))
@@ -129,8 +148,8 @@ class StoryboardValidatorTests(unittest.TestCase):
         frame = make_frame(
             1,
             "主图-01",
-            "综合使用本次全部有效参考图，按目标SKU/状态筛选商品身份、结构与颜色，其他SKU仅用于差异和防串款",
-            "综合使用本次全部有效参考图，按目标SKU/状态筛选商品身份、结构与颜色，其他SKU仅用于差异和防串款，冲突服从已确认商品卡",
+            "已分析全部参考视觉；本张实际向生成模型提供全部同款参考图，按目标SKU/状态筛选商品身份、结构与颜色，其他SKU不作为生成参考输入",
+            "已分析全部参考视觉；本张实际向生成模型提供全部同款参考图，按目标SKU/状态筛选商品身份、结构与颜色，其他SKU不作为生成参考输入，同款资料一致，无需裁决",
         )
         with self.assertRaises(StoryboardValidationError):
             validate_storyboard(make_storyboard([frame]))
@@ -139,8 +158,8 @@ class StoryboardValidatorTests(unittest.TestCase):
         frame = make_frame(
             1,
             "主图-01",
-            "综合使用本次全部有效参考图，按目标SKU/状态筛选商品身份、结构与颜色，其他SKU仅用于差异和防串款，冲突服从已确认商品卡",
-            "综合使用本次全部有效参考图，按目标SKU/状态筛选商品身份、结构与颜色，其他SKU仅用于差异和防串款",
+            "本张实际向生成模型提供全部同款参考图，按目标SKU/状态筛选商品身份、结构与颜色，其他SKU不作为生成参考输入，同款资料一致，无需裁决",
+            "本张实际向生成模型提供全部同款参考图，按目标SKU/状态筛选商品身份、结构与颜色，其他SKU不作为生成参考输入",
         )
         with self.assertRaises(StoryboardValidationError):
             validate_storyboard(make_storyboard([frame]))
@@ -149,8 +168,8 @@ class StoryboardValidatorTests(unittest.TestCase):
         frame = make_frame(
             1,
             "主图-01",
-            "只使用当前最清晰的一张正面参考图，锁定商品身份与正面几何",
-            "综合使用本次全部有效参考图提取商品身份、几何、颜色和细节",
+            "已分析全部有效参考视觉；本张实际只使用当前最清晰的一张正面参考图，锁定商品身份与正面几何",
+            "本张实际向生成模型提供全部同款参考图，按目标SKU筛选商品身份、几何、颜色和细节，其他SKU不作为生成参考输入，同款资料一致，无需裁决",
         )
         with self.assertRaises(StoryboardValidationError):
             validate_storyboard(make_storyboard([frame]))
@@ -160,15 +179,93 @@ class StoryboardValidatorTests(unittest.TestCase):
         with self.assertRaises(StoryboardValidationError):
             validate_storyboard(make_storyboard([frame]))
 
-    def test_fixed_reference_number_inside_dynamic_field_is_rejected(self) -> None:
+    def test_reference_field_must_state_all_visuals_were_analyzed(self) -> None:
         frame = make_frame(
             1,
             "主图-01",
-            "只使用一张最清晰的参考图1锁定商品身份与正面几何",
-            "只使用一张最清晰的参考图1提取商品身份与正面几何",
+            "本张实际只使用一张最清晰参考图提取商品身份和正面几何",
+            "本张实际只使用一张最清晰参考图提取商品身份和正面几何",
         )
         with self.assertRaises(StoryboardValidationError):
             validate_storyboard(make_storyboard([frame]))
+
+    def test_negated_global_analysis_claim_is_rejected_even_with_modifiers(self) -> None:
+        claims = (
+            "未完整分析全部有效参考视觉",
+            "没有真正分析全部有效参考视觉",
+            "无需分析全部有效参考视觉",
+        )
+        for claim in claims:
+            with self.subTest(claim=claim):
+                frame = make_frame(
+                    1,
+                    "主图-01",
+                    f"{claim}；本张实际只使用一张最清晰参考图提取商品身份和正面几何",
+                    f"{claim}；本张实际只使用一张最清晰参考图提取商品身份和正面几何",
+                )
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_resolved_reference_claim_must_not_be_negated_or_unresolved(self) -> None:
+        claims = (
+            "同款资料未保持一致",
+            "同款资料没有保持一致",
+            "同款资料尚未确认一致",
+            "同款资料无法确认是否一致",
+        )
+        for claim in claims:
+            with self.subTest(claim=claim):
+                frame = make_frame(
+                    1,
+                    "主图-01",
+                    f"已分析全部有效参考视觉；本张实际向生成模型提供全部同款参考图，按目标SKU筛选商品身份、结构和颜色，其他SKU不作为生成参考输入，{claim}",
+                    f"已分析全部有效参考视觉；本张实际向生成模型提供全部同款参考图，按目标SKU筛选商品身份、结构和颜色，其他SKU不作为生成参考输入，{claim}",
+                )
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_fixed_reference_number_inside_dynamic_field_is_rejected(self) -> None:
+        for index in ("1", "一", "A"):
+            with self.subTest(index=index):
+                frame = make_frame(
+                    1,
+                    "主图-01",
+                    f"已分析全部参考视觉；本张只使用一张最清晰的参考图{index}锁定商品身份与正面几何",
+                    f"本张只使用一张最清晰的参考图{index}提取商品身份与正面几何",
+                )
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_fixed_reference_number_synonyms_are_rejected(self) -> None:
+        labels = (
+            "参考图片1",
+            "商品图1",
+            "界面截图A",
+            "激活流程截图（B）",
+            "授权页面No.3",
+            "授权页截图2",
+        )
+        for label in labels:
+            with self.subTest(label=label):
+                frame = make_frame(
+                    1,
+                    "主图-01",
+                    f"已分析全部参考视觉；本张实际只使用一张最清晰的{label}提取商品身份和正面几何",
+                    f"本张实际只使用一张最清晰的{label}提取商品身份和正面几何",
+                )
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_reference_image_count_is_not_mistaken_for_an_index(self) -> None:
+        counts = ("参考图12张", "参考图十二张")
+        for count in counts:
+            with self.subTest(count=count):
+                usage = (
+                    f"已分析全部参考视觉；本张实际向生成模型提供{count}同款资料，按目标SKU筛选商品身份和结构，"
+                    "其他SKU不作为生成参考输入，同款资料一致，无需裁决"
+                )
+                frame = make_frame(1, "主图-01", usage, usage)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
 
     def test_cross_sku_fusion_is_rejected(self) -> None:
         markdown = make_storyboard([make_frame(1, "主图-01")]).replace(
@@ -177,8 +274,29 @@ class StoryboardValidatorTests(unittest.TestCase):
         with self.assertRaises(StoryboardValidationError):
             validate_storyboard(markdown)
 
+    def test_multi_sku_separate_filter_cannot_hide_later_identity_fusion(self) -> None:
+        unsafe_usages = (
+            "已分析全部参考视觉；本张实际向生成模型提供全部参考图，按各SKU分别筛选商品身份，各SKU混在同一商品层生成，同款资料一致，无需裁决",
+            "已分析全部参考视觉；本张实际向生成模型提供全部参考图，按各SKU分别筛选后合成为同一商品身份，同款资料一致，无需裁决",
+        )
+        for usage in unsafe_usages:
+            with self.subTest(usage=usage):
+                frame = make_frame(1, "SKU图-01", usage, usage).replace(
+                    "- 输出对象：【主图】", "- 输出对象：【SKU图】", 1
+                )
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
     def test_negative_prompt_can_explicitly_forbid_sku_fusion(self) -> None:
-        rules = ("不要融合不同SKU", "不得将多个SKU进行融合", "避免把不同SKU混合")
+        rules = (
+            "不要融合不同SKU",
+            "不得将多个SKU进行融合",
+            "避免把不同SKU混合",
+            "并非融合不同SKU",
+            "没有融合不同SKU",
+            "不是融合不同SKU",
+            "不要把各SKU混在同一商品层生成",
+        )
         for rule in rules:
             with self.subTest(rule=rule):
                 markdown = make_storyboard([make_frame(1, "主图-01")]).replace(
@@ -188,14 +306,151 @@ class StoryboardValidatorTests(unittest.TestCase):
                 )
                 self.assertEqual(validate_storyboard(markdown), ["主图-01"])
 
+    def test_unrelated_negation_does_not_hide_sku_fusion(self) -> None:
+        markdown = make_storyboard([make_frame(1, "主图-01")]).replace(
+            "完整保持商品轮廓", "不要改背景但要融合不同SKU，完整保持商品轮廓", 1
+        )
+        with self.assertRaises(StoryboardValidationError):
+            validate_storyboard(markdown)
+
+    def test_sku_spacing_does_not_bypass_fusion_check(self) -> None:
+        markdown = make_storyboard([make_frame(1, "主图-01")]).replace(
+            "完整保持商品轮廓", "将不同 SKU 融合成一款并保持商品轮廓", 1
+        )
+        with self.assertRaises(StoryboardValidationError):
+            validate_storyboard(markdown)
+
+    def test_cross_model_component_transplant_is_rejected(self) -> None:
+        transplant_phrases = (
+            "将PX65的三接口模块装到PX45机身",
+            "将PX65三接口模块移植到PX45机身",
+            "将65X三接口模块换到45X机身",
+            "将旗舰款接口模块移植到基础款机身",
+        )
+        for phrase in transplant_phrases:
+            with self.subTest(phrase=phrase):
+                markdown = make_storyboard([make_frame(1, "主图-01")]).replace(
+                    "完整保持商品轮廓", f"{phrase}并保持商品轮廓", 1
+                )
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(markdown)
+
+    def test_borrowing_other_sku_parts_is_rejected(self) -> None:
+        markdown = make_storyboard([make_frame(1, "主图-01")]).replace(
+            "完整保持商品轮廓", "借用其他SKU的杯盖并保持商品轮廓", 1
+        )
+        with self.assertRaises(StoryboardValidationError):
+            validate_storyboard(markdown)
+
+    def test_explanatory_sku_fusion_warning_is_allowed(self) -> None:
+        markdown = make_storyboard([make_frame(1, "主图-01")]).replace(
+            "右侧保留短文案安全区", "右侧说明融合不同SKU会造成误购", 1
+        )
+        self.assertEqual(validate_storyboard(markdown), ["主图-01"])
+
     def test_compact_target_sku_reference_wording_is_valid(self) -> None:
         frame = make_frame(
             1,
             "主图-01",
-            "综合使用多张有效参考图，只综合目标SKU的商品身份、结构与颜色，冲突时以已确认商品卡结论为准",
-            "综合使用多张有效参考图，仅采用目标SKU的商品身份、结构与颜色，冲突时以已确认商品卡结论为准",
+            "已分析全部有效参考视觉；本张实际向生成模型提供多张同款参考图，只综合目标SKU的商品身份、结构与颜色，同款资料一致，无需裁决",
+            "本张实际向生成模型提供多张同款参考图，仅采用目标SKU的商品身份、结构与颜色，同款资料一致，无需裁决",
         )
         self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_two_reference_images_is_valid_natural_wording(self) -> None:
+        frame = make_frame(
+            1,
+            "主图-01",
+            "已分析全部参考视觉；本张实际向生成模型提供两张同款参考图，按目标SKU筛选商品身份、结构和颜色，同一SKU内互补，同款资料一致，无需裁决",
+            "本张实际向生成模型提供两张同款参考图，只采用目标SKU的商品身份、结构和颜色，同一SKU内互补，同款资料一致，无需裁决",
+        )
+        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_digital_service_reference_visual_is_valid(self) -> None:
+        frame = make_frame(
+            1,
+            "主图-01",
+            "已分析全部有效参考视觉；本张实际向生成模型提供两张同版本界面截图，按目标版本筛选真实界面、权益和流程，同一版本内互补，同款资料一致，无需裁决",
+            "本张实际向生成模型提供两张同版本界面截图，按目标版本筛选真实界面、权益和交付流程，同一版本内互补，同款资料一致，无需裁决",
+        )
+        frame = frame.replace(
+            "保持轮廓、结构、比例、颜色与可见原文",
+            "保持真实界面层级、权益版本、交付状态与品牌原文",
+        ).replace(
+            "单个商品稳定放置并成为唯一焦点",
+            "真实权益界面作为唯一核心视觉载体",
+        )
+        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_digital_reference_visual_natural_terms_are_valid(self) -> None:
+        cases = (
+            ("权益页截图", "权益版本和可见原文"),
+            ("激活流程截图", "激活流程和交付状态"),
+            ("真实卖家授权页面", "授权范围和品牌原文"),
+            ("到账状态截图", "交付状态和权益版本"),
+            ("已授权服务场景", "服务触点和真实场景"),
+        )
+        for reference_term, purpose in cases:
+            with self.subTest(reference_term=reference_term):
+                usage = (
+                    f"已分析全部有效{reference_term}；本张实际向生成模型提供两张同版本{reference_term}，"
+                    f"按目标版本筛选{purpose}，同一版本内互补，同款资料一致，无需裁决"
+                )
+                frame = make_frame(1, "主图-01", usage, usage)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_global_analysis_and_single_generation_input_can_coexist(self) -> None:
+        frame = make_frame(
+            1,
+            "主图-01",
+            "已分析全部有效参考视觉；本张实际向生成模型只提供一张最清晰参考图，提取商品身份和正面几何",
+            "已分析全部参考视觉后，本张实际向生成模型只提供一张最清晰参考图，提取商品身份和正面几何",
+        )
+        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_negated_target_sku_filter_is_rejected(self) -> None:
+        for negation in ("不按", "并非按", "没有按"):
+            with self.subTest(negation=negation):
+                usage = (
+                    f"已分析全部参考视觉；本张实际向生成模型提供多张参考图，{negation}目标SKU筛选商品身份，"
+                    "同一SKU内互补，同款资料一致，无需裁决"
+                )
+                frame = make_frame(1, "主图-01", usage, usage)
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_negated_sku_isolation_is_rejected(self) -> None:
+        for negation in ("不只用", "并非只用", "没有只用"):
+            with self.subTest(negation=negation):
+                usage = (
+                    f"已分析全部参考视觉；本张实际向生成模型提供多张参考图，按目标SKU筛选商品身份，{negation}目标SKU，"
+                    "其他SKU作为主身份来源，同款资料一致，无需裁决"
+                )
+                frame = make_frame(1, "主图-01", usage, usage)
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_unresolved_product_card_pointer_is_rejected(self) -> None:
+        markdown = make_storyboard([make_frame(1, "主图-01")]).replace(
+            "同款资料一致，无需裁决", "冲突以已确认商品卡为准", 1
+        )
+        with self.assertRaises(StoryboardValidationError):
+            validate_storyboard(markdown)
+
+    def test_reading_product_card_inside_final_prompt_is_rejected(self) -> None:
+        pointers = (
+            "按照已确认商品卡中的结论保持商品轮廓",
+            "遵循已确认商品卡保持商品轮廓",
+            "根据已确认商品卡保持商品轮廓",
+            "与已确认商品卡保持一致并保持商品轮廓",
+        )
+        for pointer in pointers:
+            with self.subTest(pointer=pointer):
+                markdown = make_storyboard([make_frame(1, "主图-01")]).replace(
+                    "完整保持商品轮廓", pointer, 1
+                )
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(markdown)
 
     def test_storyboard_without_reference_index_is_valid(self) -> None:
         markdown = make_storyboard([make_frame(1, "主图-01")])
@@ -223,7 +478,7 @@ class StoryboardValidatorTests(unittest.TestCase):
     def test_english_prompts_are_rejected(self) -> None:
         markdown = make_storyboard([make_frame(1, "主图-01")])
         markdown = markdown.replace(
-            "综合使用本次全部有效参考图，按目标SKU/状态筛选商品身份、正面几何和共同特征，其他SKU仅用于差异和防串款，冲突服从已确认商品卡，完整保持商品轮廓、结构、比例、颜色和可见原文，只生成简洁背景、柔和侧光、真实接触阴影和右侧低细节安全区，画面只出现一个商品，不补画未知背面、内部或配件。",
+            "本张实际向生成模型提供全部同款参考图，按目标SKU/状态筛选商品身份、正面几何和共同特征，其他SKU不作为生成参考输入，同款资料一致，无需裁决，完整保持商品轮廓、结构、比例、颜色和可见原文，只生成简洁背景、柔和侧光、真实接触阴影和右侧低细节安全区，画面只出现一个商品，不补画未知背面、内部或配件。",
             "Keep the product unchanged on a clean studio background.",
         )
         with self.assertRaises(StoryboardValidationError):
@@ -232,7 +487,7 @@ class StoryboardValidatorTests(unittest.TestCase):
     def test_almost_entirely_english_prompt_is_rejected(self) -> None:
         markdown = make_storyboard([make_frame(1, "主图-01")])
         markdown = markdown.replace(
-            "综合使用本次全部有效参考图，按目标SKU/状态筛选商品身份、正面几何和共同特征，其他SKU仅用于差异和防串款，冲突服从已确认商品卡，完整保持商品轮廓、结构、比例、颜色和可见原文，只生成简洁背景、柔和侧光、真实接触阴影和右侧低细节安全区，画面只出现一个商品，不补画未知背面、内部或配件。",
+            "本张实际向生成模型提供全部同款参考图，按目标SKU/状态筛选商品身份、正面几何和共同特征，其他SKU不作为生成参考输入，同款资料一致，无需裁决，完整保持商品轮廓、结构、比例、颜色和可见原文，只生成简洁背景、柔和侧光、真实接触阴影和右侧低细节安全区，画面只出现一个商品，不补画未知背面、内部或配件。",
             "Keep all reference images unchanged and render a clean premium studio product photo with realistic lighting, shadows, composition, materials and typography. 中文",
         )
         with self.assertRaises(StoryboardValidationError):
