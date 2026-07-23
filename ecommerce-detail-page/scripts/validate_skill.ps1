@@ -1,6 +1,46 @@
 ﻿$ErrorActionPreference = 'Stop'
 
 $skillRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$repositoryReadme = Join-Path (Split-Path $skillRoot -Parent) 'README.md'
+
+function Get-StrictUtf8Text {
+    param([Parameter(Mandatory)][string]$Path)
+
+    try {
+        $encoding = [System.Text.UTF8Encoding]::new($false, $true)
+        return $encoding.GetString([System.IO.File]::ReadAllBytes($Path))
+    }
+    catch {
+        throw "文件不是严格 UTF-8 编码：$Path"
+    }
+}
+
+function Test-LocalMarkdownLinks {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $text = Get-StrictUtf8Text -Path $Path
+    $matches = [regex]::Matches($text, '!?' + '\[[^\]]*\]\((?:<(?<angle>[^>]+)>|(?<plain>[^)\s]+))')
+    foreach ($match in $matches) {
+        $target = if ($match.Groups['angle'].Success) { $match.Groups['angle'].Value } else { $match.Groups['plain'].Value }
+        if ($target -match '^(?:https?://|mailto:|data:|#)') {
+            continue
+        }
+        $pathPart = ($target -split '#', 2)[0]
+        if (-not $pathPart) {
+            continue
+        }
+        $decodedPath = [Uri]::UnescapeDataString($pathPart)
+        $resolvedTarget = if ([IO.Path]::IsPathRooted($decodedPath)) {
+            $decodedPath
+        }
+        else {
+            Join-Path (Split-Path $Path -Parent) $decodedPath
+        }
+        if (-not (Test-Path -LiteralPath $resolvedTarget)) {
+            throw "Markdown 本地链接不存在：$Path -> $target"
+        }
+    }
+}
 
 $requiredFiles = @(
     'SKILL.md'
@@ -48,6 +88,17 @@ foreach ($relativePath in $requiredFiles) {
     }
 }
 
+$strictTextFiles = @($requiredFiles | ForEach-Object { Join-Path $skillRoot $_ })
+if (Test-Path -LiteralPath $repositoryReadme -PathType Leaf) {
+    $strictTextFiles += $repositoryReadme
+}
+foreach ($textFile in $strictTextFiles | Select-Object -Unique) {
+    $null = Get-StrictUtf8Text -Path $textFile
+}
+foreach ($markdownFile in $strictTextFiles | Where-Object { [IO.Path]::GetExtension($_) -eq '.md' } | Select-Object -Unique) {
+    Test-LocalMarkdownLinks -Path $markdownFile
+}
+
 $actualReferences = @(
     Get-ChildItem -LiteralPath (Join-Path $skillRoot 'references') -File |
         Sort-Object Name |
@@ -90,10 +141,21 @@ foreach ($behavior in @(
     '证据观察 → 问题建模 → 发散候选 → 跨域组合 → 反证淘汰 → 收敛排序 → 阶段落位 → 缺口回看',
     '静态图型库不能代替主动推演',
     '事实与安全使用必要硬边界，创意与探索使用正向目标、可变空间和成功标准',
+    '“建议图片”只是帮助用户判断需求的非约束性假设',
+    '“产品素材图”不是正式输出对象',
+    '数量必须分清三层',
+    '成品1张 + 内部若干个模块/分镜',
+    '不按通用详情页习惯默认8、10或12个模块',
+    '待范围判断',
+    '按命中内容渐进读取',
+    '不在同一份正式交付中自动附加生图菜单',
+    '本阶段不重新运行完整推演循环',
+    '编译 → 反证 → 最小修复',
     '正式交付不添加参考图索引',
     '数字权益或服务商品',
     '其他SKU默认不作为生成参考输入',
-    '不能把“以商品卡为准”留给看不到商品卡的生图模型'
+    '不能把“以商品卡为准”留给看不到商品卡的生图模型',
+    '用户口述的图片清单、文件名、附件数量、替代文字、聊天摘要或“已经提供图片”的声明都不等于实际看图'
 )) {
     if ($skillText -notmatch [regex]::Escape($behavior)) {
         throw "SKILL.md 缺少核心行为：$behavior"
@@ -127,12 +189,14 @@ foreach ($step in $mainChain) {
 
 $prebuildText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'references/prebuild-and-product-card.md')
 foreach ($behavior in @(
-    '识别主体 → AI预构建 → 编号建议 → 用户选择或纠正 → 商品卡（待确认） → 用户确认 → 已确认商品卡',
+    '识别主体 → AI预构建 → 编号建议 → 用户选择或纠正 → 商品卡（待确认） → 用户确认或明确直出授权 → 已确认商品卡',
     '可见几何确定性30%',
     '81–100分（严格超过80分）',
     '写实视图确认',
     '不等同于商品卡确认',
     '不能替用户自动确认写实视图',
+    '单一清晰目标且无关键冲突时',
+    '多SKU、相似款、主体/SKU/状态不确定',
     '确认商品卡',
     '不视为商品卡确认'
 )) {
@@ -154,7 +218,17 @@ foreach ($behavior in @(
     '剩余自动完成',
     '摘要只作透明记录，不等待再次回复',
     '同一轮直接进入结构首推',
-    '候选图片数量'
+    '候选图片数量',
+    '采用AI首推并确认本张',
+    '待范围判断',
+    '不在同一份正式交付中自动追加选择菜单',
+    '产品素材图”只是上位入口',
+    '数量分三层记录',
+    '成品1张 + 内部若干个模块/分镜',
+    '不默认8、10、12等通用长度',
+    '只预览下一张的任务摘要',
+    '不得静默改变确认状态',
+    '简化确认卡不临时引入没有展示过的'
 )) {
     if ($workflowText -notmatch [regex]::Escape($behavior)) {
         throw "确认工作流缺少核心行为：$behavior"
@@ -182,7 +256,7 @@ foreach ($imageTypeGroup in @(
     '创意视觉类',
     '组合、包装与到手类',
     '信任背书与来源类',
-    '利益与行动类'
+    '利益与行动类',
     '数字权益与服务交付类'
 )) {
     if ($planningText -notmatch [regex]::Escape($imageTypeGroup)) {
@@ -259,9 +333,14 @@ foreach ($categoryFamily in @(
 }
 
 $templateText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'references/storyboard-template.md')
-foreach ($behavior in @('参考图使用', '不输出参考图索引', '不写固定参考图编号', '本张实际向生成模型提供', '不能只留下“服从商品卡”')) {
+foreach ($behavior in @('参考图使用', '不输出参考图索引', '不写固定参考图编号', '本张实际向生成模型提供', '不能只留下“服从商品卡”', '连续详情页最终成品为一张长画布')) {
     if ($templateText -notmatch [regex]::Escape($behavior)) {
         throw "最终分镜模板缺少动态参考图规则：$behavior"
+    }
+}
+foreach ($behavior in @('数量单位按真实语义', '不在同一份正式交付中追加生图菜单')) {
+    if ($templateText -notmatch [regex]::Escape($behavior)) {
+        throw "最终分镜模板缺少交付边界：$behavior"
     }
 }
 
@@ -272,14 +351,20 @@ foreach ($behavior in @('等价序列化', '工具只支持一张参考图时', 
     }
 }
 
-$readmeText = Get-Content -Raw -Encoding UTF8 (Join-Path (Split-Path $skillRoot -Parent) 'README.md')
-foreach ($tutorialHeading in @('## 第一步：图片识别', '## 第四步：生成并确认商品卡', '## 第七步：逐张分镜提示词', '## 第八步：可选生图', '## 常见问题')) {
-    if ($readmeText -notmatch [regex]::Escape($tutorialHeading)) {
-        throw "README 缺少使用教程章节：$tutorialHeading"
+$readmeText = $null
+if (Test-Path -LiteralPath $repositoryReadme -PathType Leaf) {
+    $readmeText = Get-StrictUtf8Text -Path $repositoryReadme
+    foreach ($tutorialHeading in @('## 第一步：图片识别', '## 第四步：生成并确认商品卡', '## 第七步：逐张分镜提示词', '## 第八步：可选生图', '## 常见问题', '### 成品、分镜和生图数量有什么区别？')) {
+        if ($readmeText -notmatch [regex]::Escape($tutorialHeading)) {
+            throw "README 缺少使用教程章节：$tutorialHeading"
+        }
     }
 }
 
-$liveMarkdown = @($readmeText, $skillText)
+$liveMarkdown = @($skillText)
+if ($null -ne $readmeText) {
+    $liveMarkdown += $readmeText
+}
 $liveMarkdown += Get-ChildItem -LiteralPath (Join-Path $skillRoot 'references') -File -Filter '*.md' |
     ForEach-Object { Get-Content -Raw -Encoding UTF8 $_.FullName }
 $liveText = $liveMarkdown -join "`n"
@@ -291,6 +376,15 @@ foreach ($legacy in @('91–100分', '0–90分', '高于90分', '高置信推�
 foreach ($legacyField in @('### 参考图索引', '商品身份参考图', '画面主参考图', '辅助参考图', '身份母图', '参考图职责', '身份参考图', '参考图绑定')) {
     if ($liveText -match [regex]::Escape($legacyField)) {
         throw "仍保留旧参考图输出字段：$legacyField"
+    }
+}
+foreach ($workflowConflict in @(
+    '正式提示词全部交付后，才显示生图选项',
+    '用户尚未说明才提供以下紧凑选择',
+    '只有用户尚未说明是否生图时才显示'
+)) {
+    if ($liveText -match [regex]::Escape($workflowConflict)) {
+        throw "仍保留会污染正式分镜的自动生图菜单规则：$workflowConflict"
     }
 }
 
