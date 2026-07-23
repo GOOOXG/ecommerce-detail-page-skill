@@ -479,6 +479,14 @@ MARKETING_PRODUCT_VISUAL_SUFFIX_RE = re.compile(
     r"耳机|扫地机|传感器|显示器|相机|手机|线束|仪表|灯具|杯子|水杯|箱|盒|工具|"
     r"模式|置于|放置|摆放|居中|占据|佩戴|手持|展示|陈列|使用)"
 )
+# 真实商品型号常把营销缩写与数字连在一起（例如“FAST-200扫地机”）。
+# 这类身份可能出现在布局、场景或画面字段，而不一定紧跟“商品名称/型号”
+# 标签；只在后面出现明确实体名词、且没有模型/策略等内部后缀时放行。
+MARKETING_PRODUCT_NUMBER_SUFFIX_RE = re.compile(
+    r"^\s*[-_/ ]?\d[A-Za-z0-9._/+ -]{0,20}\s*"
+    r"[\u3400-\u9fff]{1,24}(?:商品|产品|设备|机器|耳机|扫地机|传感器|显示器|"
+    r"相机|手机|线束|接口|仪表|灯具|杯子|水杯|箱|盒|工具|家具|服装|包装)"
+)
 MARKETING_PRODUCT_ACTION_PREFIX_RE = re.compile(
     r"(?:展示|呈现|显示|保持|还原|放置|摆放|启用|切换至|锁定)\s*$"
 )
@@ -1336,6 +1344,11 @@ def _contains_forbidden_marketing_model(text: str) -> bool:
             continue
 
         suffix_has_internal_context = MARKETING_INTERNAL_SUFFIX_RE.search(suffix) is not None
+        if (
+            not suffix_has_internal_context
+            and MARKETING_PRODUCT_NUMBER_SUFFIX_RE.match(suffix) is not None
+        ):
+            continue
         identity_cues = list(MARKETING_IDENTITY_CUE_RE.finditer(prefix))
         if identity_cues:
             last_identity = identity_cues[-1]

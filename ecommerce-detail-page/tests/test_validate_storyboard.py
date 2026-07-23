@@ -644,6 +644,22 @@ class StoryboardValidatorTests(unittest.TestCase):
                 )
                 self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
 
+    def test_numbered_product_identifiers_are_allowed_in_layout_context(self) -> None:
+        # 型号可能出现在布局或场景描述中，不能因为与营销缩写重名就误拒；
+        # 但“FAST-200模型/策略”仍属于内部方法语境，由既有规则拦截。
+        frame = make_frame(1, "主图-01").replace(
+            "- 画布与布局：【商品居中，占画面一半，右侧保留短文案安全区】",
+            "- 画布与布局：【FAST-200扫地机居中，占画面一半，右侧保留短文案安全区】",
+        )
+        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+        unsafe = make_frame(1, "主图-01").replace(
+            "- 画布与布局：【商品居中，占画面一半，右侧保留短文案安全区】",
+            "- 画布与布局：【FAST-200模型组织画面，商品居中，占画面一半】",
+        )
+        with self.assertRaises(StoryboardValidationError):
+            validate_storyboard(make_storyboard([unsafe]))
+
     def test_printing_and_product_mode_terms_named_like_models_are_allowed(self) -> None:
         domain_phrases = (
             "采用4C印刷工艺还原包装色彩",

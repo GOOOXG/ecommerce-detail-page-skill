@@ -124,6 +124,62 @@ class MarketingReasoningContentTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, self.text)
 
+    def test_requested_models_have_actionable_call_cards(self) -> None:
+        start = self.text.index("## 模型调用卡：从触发到分镜")
+        end = self.text.index("## 模型选择规则", start)
+        call_cards = self.text[start:end]
+        requested = (
+            "**AIPL**",
+            "**FAST**",
+            "**GROW**",
+            "**人货场**",
+            "**AARRR**",
+            "**FOMO/错失恐惧**",
+            "**锚定效应**",
+            "**消费决策心理学（综合链）**",
+        )
+        for model in requested:
+            with self.subTest(model=model):
+                self.assertIn(model, call_cards)
+        for phrase in (
+            "触发问题",
+            "所需输入",
+            "阶段动作",
+            "对象/图型",
+            "可用证据",
+            "不可推导",
+            "降级路径",
+            "停止条件",
+        ):
+            with self.subTest(field=phrase):
+                self.assertIn(phrase, call_cards)
+        # 每个模型行都必须留下可执行的证据或降级边界，防止退化成只列名称。
+        rows = [
+            line
+            for line in call_cards.splitlines()
+            if line.startswith("| **") and line.count("|") >= 4
+        ]
+        self.assertGreaterEqual(len(rows), 8)
+        for row in rows:
+            with self.subTest(row=row[:40]):
+                self.assertRegex(row, r"证据|资料|数据")
+                self.assertRegex(row, r"停止|删除|不写|不凭|缺")
+
+    def test_fast_and_grow_definition_priority_is_explicit(self) -> None:
+        self.assertIn("FAST 与 GROW 在不同平台可能有不同释义", self.text)
+        self.assertIn("用户/平台资料优先", self.text)
+        self.assertIn("本文件固定采用“渗透力—复购力—价格力—延展力”", self.text)
+
+    def test_psychology_chain_is_mapped_without_manipulation(self) -> None:
+        for phrase in (
+            "注意 → 理解 → 信任 → 选择 → 行动 → 复购/推荐",
+            "不制造虚假稀缺",
+            "不虚构原价",
+            "不把心理推断当作用户事实",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, self.text)
+
     def test_skill_routes_marketing_layer_without_replacing_main_flow(self) -> None:
         self.assertIn("references/marketing-reasoning.md", self.skill_text)
         self.assertIn("营销模型加速层", self.skill_text)
@@ -141,6 +197,12 @@ class MarketingReasoningContentTests(unittest.TestCase):
         self.assertIn("FABE", self.readme_text)
         self.assertIn("AIPL", self.readme_text)
         self.assertIn("人货场", self.readme_text)
+
+    def test_readme_contains_model_call_card_tutorial(self) -> None:
+        self.assertIn("### 模型调用卡：让模型真正参与构图", self.readme_text)
+        for phrase in ("FAST", "GROW", "AARRR", "FOMO", "锚定效应", "停止条件"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, self.readme_text)
 
 
 if __name__ == "__main__":
