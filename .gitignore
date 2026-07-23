@@ -3,5 +3,5 @@
 Thumbs.db
 *.tmp
 *.log
-.github-research/
-系统提示词/
+__pycache__/
+*.pyc
