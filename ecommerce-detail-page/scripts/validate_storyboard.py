@@ -300,6 +300,12 @@ GENERAL_REFERENCE_PENDING_RE = re.compile(
     r"(?:尚|仍|还)?未完成(?:核验|确认|裁决)|"
     r"需要后续再议|不能确认|待确认)"
 )
+EXPLICIT_PROHIBITION_RE = re.compile(
+    r"(?:不得|不能|不可|不要|禁止|避免|防止|杜绝|切勿|请勿|不应|勿|切莫)"
+    r"(?:补画|生成|还原|呈现|写入|采用|使用|改变|修改|重画|重塑|增加|添加|删除|新增|"
+    r"推断|推测|虚构|编造|猜测|补充|"
+    r"融合|混合|拼装|拼搭|传入|输入|把|将)"
+)
 SAFE_PENDING_EXCLUSION_RE = re.compile(
     r"(?:(?:不能确认|无法确认|不确定|待确认|待判断|拿不准|尚有疑问)"
     r"[^，。；\n]{0,10}(?:隐藏结构|未知(?:背面|底部|内部|配件|拆解|接口)|"
@@ -1014,6 +1020,8 @@ def _has_general_pending_reference_status(text: str) -> bool:
     """识别多参考资料中的未决状态；明确舍弃未知事实时允许继续。"""
 
     for match in GENERAL_REFERENCE_PENDING_RE.finditer(text):
+        if EXPLICIT_PROHIBITION_RE.match(text, match.start()):
+            continue
         clause_start = max(text.rfind(separator, 0, match.start()) for separator in "。；\n") + 1
         clause_ends = [text.find(separator, match.end()) for separator in "。；\n"]
         clause_end = min((position for position in clause_ends if position >= 0), default=len(text))

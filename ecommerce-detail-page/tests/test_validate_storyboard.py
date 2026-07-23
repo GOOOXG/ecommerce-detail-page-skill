@@ -350,6 +350,22 @@ class StoryboardValidatorTests(unittest.TestCase):
         frame = make_frame(1, "主图-01", usage, usage)
         self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
 
+    def test_explicit_prohibitions_are_not_mistaken_for_unresolved_status(self) -> None:
+        usages = (
+            "已分析全部有效参考视觉；本张实际向生成模型提供多张同款参考图，"
+            "按目标SKU筛选商品身份和结构，其他SKU不作为生成参考输入，同款资料一致，无需裁决；不能补画未知背面",
+            "已分析全部有效参考视觉；本张实际向生成模型提供多张同款参考图，"
+            "按目标SKU筛选商品身份和结构，其他SKU不作为生成参考输入，同款资料一致，无需裁决；不能改变商品结构",
+            "已分析全部有效参考视觉；本张实际向生成模型提供多张同款参考图，"
+            "按目标SKU筛选商品身份和结构，其他SKU不作为生成参考输入，同款资料一致，无需裁决；不能推断隐藏结构",
+            "已分析全部有效参考视觉；本张实际向生成模型提供多张同款参考图，"
+            "按目标SKU筛选商品身份和结构，其他SKU不作为生成参考输入，同款资料一致，无需裁决；不能虚构未知背面",
+        )
+        for usage in usages:
+            with self.subTest(usage=usage):
+                frame = make_frame(1, "主图-01", usage, usage)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
     def test_general_unresolved_multi_reference_wording_is_rejected(self) -> None:
         unresolved_claims = (
             "资料不确定",
