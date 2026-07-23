@@ -379,7 +379,20 @@ foreach ($behavior in @('等价序列化', '工具只支持一张参考图时', 
 $readmeText = $null
 if (Test-Path -LiteralPath $repositoryReadme -PathType Leaf) {
     $readmeText = Get-StrictUtf8Text -Path $repositoryReadme
-    foreach ($tutorialHeading in @('## 第一步：图片识别', '## 第四步：生成并确认商品卡', '## 第七步：逐张分镜提示词', '## 第八步：可选生图', '## 常见问题', '### 成品、分镜和生图数量有什么区别？')) {
+    foreach ($tutorialHeading in @(
+        '## 核心流程',
+        '## 第一步：图片识别',
+        '## 第四步：生成并确认商品卡',
+        '## 第七步：逐张分镜提示词',
+        '## 第八步：可选生图',
+        '## 单参考图与多参考图',
+        '## 图型能力库：从买家问题出发',
+        '## 子智能体与自我学习',
+        '## 最终分镜提示词示例',
+        '## 常见问题',
+        '### 成品、分镜和生图数量有什么区别？',
+        '## 验证与测试'
+    )) {
         if ($readmeText -notmatch [regex]::Escape($tutorialHeading)) {
             throw "README 缺少使用教程章节：$tutorialHeading"
         }
@@ -396,6 +409,11 @@ $liveText = $liveMarkdown -join "`n"
 foreach ($legacy in @('91–100分', '0–90分', '高于90分', '高置信推定/示意')) {
     if ($liveText -match [regex]::Escape($legacy)) {
         throw "仍保留旧隐藏视图规则：$legacy"
+    }
+}
+foreach ($legacyDirection in @('固定5个综合方向', '固定五个综合方向', '五个综合方向始终内部比较')) {
+    if ($liveText -match [regex]::Escape($legacyDirection)) {
+        throw "仍保留固定综合方向规则：$legacyDirection"
     }
 }
 foreach ($legacyField in @('### 参考图索引', '商品身份参考图', '画面主参考图', '辅助参考图', '身份母图', '参考图职责', '身份参考图', '参考图绑定')) {
