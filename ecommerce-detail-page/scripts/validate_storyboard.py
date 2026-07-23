@@ -50,6 +50,9 @@ SECURITY_TRADITIONAL = str.maketrans(
         "層": "层", "總": "总", "覽": "览", "對": "对", "顯": "显",
         "數": "数", "頁": "页", "幀": "帧", "執": "执", "陳": "陈",
         "請": "请", "說": "说", "會": "会", "誤": "误", "購": "购",
+        "營": "营", "銷": "销", "紅": "红", "隊": "队", "錨": "锚",
+        "損": "损", "厭": "厌", "懼": "惧", "從": "从", "眾": "众",
+        "長": "长", "環": "环", "賦": "赋",
     }
 )
 SECURITY_PUNCTUATION = str.maketrans({",": "，", ";": "；"})
@@ -292,8 +295,8 @@ GENERAL_REFERENCE_PENDING_RE = re.compile(
     r"需要(?:用户|客户)(?:判断|确认|拍板)|"
     r"(?:还|尚|仍)?没有裁决|"
     r"结论(?:还|尚|仍)?(?:没(?:有)?出来|未出)|"
-    r"(?:暂|尚|仍|目前)?不能(?:得出|形成|作出|做出)?(?:结论|判断)?|"
-    r"(?:暂时|暂|目前|尚|仍)?无法(?:判定|判断|确认|核实|得出(?:结论)?)|"
+    r"(?:暂|尚|仍|目前)?不能\s*(?:得出|形成|作出|做出)?\s*(?:结论|判断|确认|确定|核实|证明)|"
+    r"(?:暂时|暂|目前|尚|仍)?无法\s*(?:判定|判断|确认|核实|得出(?:结论)?|证明)|"
     r"还需(?:进一步)?(?:核对|核验|确认|判断|裁决)|"
     r"(?:暂|尚|仍|目前)?无(?:明确)?结论|"
     r"暂不确定|(?:尚|仍|还)?未(?:完成)?核对(?:完成)?|"
@@ -371,11 +374,154 @@ FORBIDDEN_SECRET_RE = re.compile(
 )
 FORBIDDEN_INTERNAL_RE = re.compile(
     r"(?:内部(?:评分|打分|质检(?:结论)?|审核)|审核结论\s*[：:]|评审意见\s*[：:]|"
+    r"(?:内部思考|我的推理|后台(?:推演|分析)|仅供内部)(?:如下|使用)?\s*[：:]?|"
+    r"分析过程(?:如下)?\s*[：:]|"
     r"候选(?:方案|比较|稿[^，。；\n]{0,16}优于)|角色(?:讨论|名称)|"
     r"(?:循环|推演)(?:日志|记录)|思维链(?:如下)?|推理过程(?:如下)?|"
     r"模型名|测试(?:标签|文字)|审查状态|调试字段|未采用方案|确认记录|隐藏思考链|"
     r"写实视图确认|待范围判断|(?:已确认|未确认|待确认|候选)写实视图|"
     r"置信水平|还原把握度|待审核)"
+)
+FORBIDDEN_INTERNAL_REASONING_RE = re.compile(
+    r"(?:"
+    r"(?:内部|幕后|后台|供内部参考|仅供(?:内部|团队)|不对外(?:展示|公开))"
+    r"[^，。；\n]{0,20}(?:思考|判断|分析|推理|推演|推导|结论|演算|自检|决策|取舍|依据|思路|记录|笔记|备忘|草稿|查看)|"
+    r"(?:思考|判断|分析|推理|推演|推导|结论|演算|自检|决策|取舍|依据|思路|选择)"
+    r"[^，。；\n]{0,8}(?:记录|笔记|备忘|草稿|过程|摘要|理由)|"
+    r"(?:记录|笔记|备忘|草稿)[^，。；\n]{0,8}(?:思考|判断|分析|推理|推演|推导)"
+    r")"
+)
+FORBIDDEN_REASONING_RECORD_RE = re.compile(
+    r"(?:判断草案|方案取舍表|分析手记|选择依据|创作复盘|审稿备注|决策轨迹|草案比较|"
+    r"供审核的思路|候选排序记录|设计者备注|过程说明|利弊权衡|团队讨论摘要|"
+    r"为什么选这版|为什么选择这版|候选排序|取舍表|分析摘要|审稿记录)"
+)
+FORBIDDEN_MARKETING_MODEL_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9])(?:FABE?|AIDMA|AIDA|AISAS|ACCA|DAGMAR|PASTOR|PAS|BAB|QUEST|CDJ|"
+    r"AIPL|FAST|GROW|AARRR|RACE|RFMTC|RFM|CLV|LTV|NPS|OODA|CRO|ICE|RICE|PIE|"
+    r"USP|RTB|JTBD|KANO|MECE|STP|PEST|SWOT|BCG|ANSOFF|FOMO|MEDDIC|SPIN|"
+    r"ELM|FOGG|4U|4C|4P|4E|7P|3C|4A|5A|O-?5A|STDC|NSM|5WHY|OST|TRIZ|PDCA|CAGE|EPRG|CBBE|KFS|GPM|"
+    r"FACT(?:\+S)?|DEEPLINK|ONE-ID|LOOKALIKE|KOC|K-?FACTOR|WTP|ESG|LCA|"
+    r"ESP|RSP|EPP|RARRA|PMF|CMF|IMF|VOC|STEPS|LAER|PERSONA|COHORT|DTC|5W2H|A/B/N|"
+    r"GROWTH\s+LOOP|CONTENT\s+LOOP|PAID\s+LOOP|VIRAL\s+LOOP|LIFT\s+TEST|"
+    r"SEE-THINK-DO-CARE|STAGE(?:[-\s]+)GATE|HOOK-PROOF-CLOSE|PRE-?MORTEM|CYNEFIN|GOODHART|"
+    r"HOW\s+BRANDS\s+GROW|OPPORTUNITY\s+SOLUTION\s+TREE|STORY\s+MAPPING|ACCEPTANCE\s+CRITERIA|"
+    r"(?:CAMPAIGN|CREATIVE)\s+BRIEF|MESSAGE\s+HIERARCHY|CONTENT\s+ARCHITECTURE|"
+    r"人货场|锚定效应|损失厌恶|社会证明|选择架构|消费决策心理学|行为经济学|"
+    r"框架效应|禀赋效应|现状偏误|心理账户|用户画像|格式塔原则|叙事传输|"
+    r"消费者采用路径|首屏截停|痛点递进|竞品差异化|感官转译|场景穿透|合规信任|"
+    r"价值解释|情绪溢价|行动促进|顾虑兜底|"
+    r"波特五力|稀缺与时效|边际\s*ROI|因果推断|价格弹性|捆绑定价|价值阶梯|"
+    r"公域[—–-]私域[—–-]品牌域|私域四阵地|创新十类|视觉独特资产|"
+    r"精细加工可能性模型|前景理论|稀缺原则|权威原则|承诺一致|选择悖论|折中效应|诱饵效应|"
+    r"风险逆转|认知流畅|峰终定律|蔡格尼克效应|首因效应|近因效应|序位效应|"
+    r"冯·雷斯托夫效应|互惠(?:原则|效应)?|认知失调|默认效应|支付痛苦|支付意愿|目标梯度|心理距离|解释水平|"
+    r"具身认知|心理模型|营销模型|"
+    r"内容循环|增长循环|付费循环|病毒循环|多臂老虎机|贝叶斯(?:更新|AB测试)|"
+    r"六顶思考帽|鱼骨图|决策矩阵|事前验尸|二阶思维|奥卡姆剃刀|情景规划|"
+    r"双钻|设计思维|机会解法树|旅程地图|情感化设计三层|内容4E|金字塔原则|价值主张画布|"
+    r"同理心地图|品牌棱镜|定位理论|品类心智阶梯|独特性资产|奢侈品梦想方程|"
+    r"单位经济|北极星指标|指标树|逻辑树|Goodhart定律|古德哈特定律|福格行为模型|"
+    r"选品五力|货盘金字塔|价格带|信任状组合|电商全链路|模块化资产策略|品牌原型|"
+    r"消费仪式|隐喻思维|"
+    r"蓝海战略(?:画布)?|知识产权矩阵|危机沟通3T|模型红队|"
+    r"(?:证据|买家|心理|平台|生产|模型)红队|非目标人群|不适用场景|关系链|品牌人格|品牌资产|"
+    r"相似人群|AI代理购物|内容智能|AI归因|GenAI内容|个性化引擎|预测性营销|内容场|中心场|营销场|"
+    r"Gap\s*Selling|留存阶段|用户故事|场景立方体|用户生命周期五阶段|首单到二单|订阅续订|"
+    r"主图CTR|详情页转化信息序|价格带卡位|SKU精简|长尾平衡|素材工厂|计划[—–-]单元[—–-]创意|"
+    r"单品[—–-]爆品[—–-]品类[—–-]品牌成长|广告法宣传合规|平台责任|产品合规认证路径|内容本地化|"
+    r"转化视觉技法库|认知反差|隐性问题可视化|感官转译|场景穿透|顾虑兜底|"
+    r"公域[—–-]私域[—–-]品牌域|危机沟通3T)(?![A-Za-z0-9])"
+)
+SPLITTABLE_MARKETING_ACRONYMS = (
+    "FABE", "FAB", "AIDMA", "AIDA", "AISAS", "ACCA", "DAGMAR", "PASTOR", "PAS", "BAB",
+    "QUEST", "CDJ", "AIPL", "FAST", "GROW", "AARRR", "RACE", "RFMTC", "RFM", "CLV", "LTV",
+    "NPS", "OODA", "CRO", "ICE", "RICE", "PIE", "USP", "RTB", "JTBD", "KANO", "MECE", "STP",
+    "PEST", "SWOT", "BCG", "ANSOFF", "FOMO", "MEDDIC", "SPIN", "ELM", "FOGG", "TRIZ", "PDCA",
+    "CAGE", "EPRG", "CBBE", "KFS", "GPM", "FACT", "DEEPLINK", "ONEID", "LOOKALIKE", "KOC",
+    "KFACTOR", "WTP", "ESG", "LCA", "ESP", "RSP", "RARRA", "PMF", "CMF", "IMF", "VOC",
+    "STEPS", "LAER", "PERSONA", "COHORT", "DTC", "STDC", "NSM", "OST", "5WHY", "5W2H", "O5A", "5A",
+    "4A", "4U", "4C", "4P", "4E", "7P", "3C",
+)
+FORBIDDEN_SPLIT_MARKETING_MODEL_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9])(?:"
+    + "|".join(
+        r"[\s.·•_/-]*".join(re.escape(character) for character in acronym)
+        for acronym in sorted(SPLITTABLE_MARKETING_ACRONYMS, key=len, reverse=True)
+    )
+    + r")(?![A-Za-z0-9])"
+)
+MARKETING_IDENTITY_CUE_RE = re.compile(
+    r"(?:商品(?:名称|名|身份|锁定|型号)|产品(?:名称|名|身份|锁定|型号)|"
+    r"品牌(?:原文|名称)?|型号|款号|货号|SKU|版本|系列|"
+    r"材质|成分|规格|参数|认证|标准|证书|功能|权益|服务|"
+    r"包装(?:原文|文字|名称)?|可见(?:品牌|型号|原文|文字)|界面文字|原文)",
+    re.IGNORECASE,
+)
+MARKETING_INTERNAL_CUE_RE = re.compile(
+    r"(?:营销|消费者|心理|增长|转化|购买|路径|框架|策略|推演|加速|红队|"
+    r"调用|采用|选择|辅助|主模型|模型|阶段|使用)"
+)
+MARKETING_INTERNAL_SUFFIX_RE = re.compile(
+    r"(?:模型|框架|阶段|策略|红队|法则|定律|理论|矩阵|漏斗|循环|路径|推演)"
+)
+MARKETING_IDENTITY_SUFFIX_RE = re.compile(
+    r"^(?:品牌|系列|产品|商品|型号|款号|货号|版本|SKU|"
+    r"认证|标准|证书|材质|成分|规格|参数|功能|权益|服务)(?!模型)",
+    re.IGNORECASE,
+)
+MARKETING_STRONG_PRODUCT_PREFIX_RE = re.compile(
+    r"(?:目标(?:商品|产品)(?:为|是)|锁定)\s*$"
+)
+MARKETING_PRODUCT_VISUAL_SUFFIX_RE = re.compile(
+    r"^\s*(?:[-_/ ]?[A-Za-z0-9][A-Za-z0-9._/+ -]{0,20})?"
+    r"[\u3400-\u9fff]{1,32}(?:外观|轮廓|结构|比例|颜色|材质|包装|界面|主体|细节|"
+    r"耳机|扫地机|传感器|显示器|相机|手机|线束|仪表|灯具|杯子|水杯|箱|盒|工具|"
+    r"模式|置于|放置|摆放|居中|占据|佩戴|手持|展示|陈列|使用)"
+)
+MARKETING_PRODUCT_ACTION_PREFIX_RE = re.compile(
+    r"(?:展示|呈现|显示|保持|还原|放置|摆放|启用|切换至|锁定)\s*$"
+)
+MARKETING_PRODUCT_MODE_CONTEXT_RE = re.compile(
+    r"^\s*模式[^，。；\n]{0,20}(?:仪表|界面|屏幕|文字|标签|按钮|图标|显示|保留|切换)"
+)
+IDENTITY_ENGLISH_COMMAND_RE = re.compile(
+    r"(?i)\b(?:create|generate|render|use|keep|maintain|add|remove|replace)\b"
+ )
+INTERNAL_METHOD_EXPRESSION_RE = re.compile(
+    r"(?P<marker>幕后|后台|内部)"
+    r"[^，。；\n]{0,64}?"
+    r"(?P<method>模型|框架|策略|效应|理论|定律|法则|矩阵|方法|路径|曲线|原则|机制)"
+)
+METHOD_NOUN_RE = (
+    r"(?:模型|框架|策略|效应|理论|定律|法则|矩阵|方法|路径|曲线|原则|机制|套路|范式|打法|公式|"
+    r"体系|架构|循环|漏斗|阶梯|指数|张力|阻力|增益|触发(?:器)?|人格|关系链|资产)"
+)
+UNPREFIXED_METHOD_EXPRESSION_RE = re.compile(
+    rf"(?:(?:暗中|暗线|制作端|创作(?:时|阶段)|设计(?:环节|阶段)|工作流(?:里|中)?|脑内|在脑内|在脑中)\s*)?"
+    rf"(?:依据|基于|按照|按|采用|运用|借助|依照|套用|调用|参照|依托|援引|使用|选择|将|把)"
+    rf"[^，。；\n]{{0,28}}{METHOD_NOUN_RE}"
+    rf"[^，。；\n]{{0,20}}(?:组织|安排|推演|分析|编排|排布|规划|构图|构建|设计|强化|指导|作为|服务)"
+    rf"[^，。；\n]{{0,16}}(?:画面|内容|卖点|构图|信息|文案|视觉|布局|主图|分镜|紧迫感|转化|购买|行动)"
+ )
+INTERNAL_VISUAL_PROCESS_RE = re.compile(
+    r"(?P<marker>幕后|后台|内部)"
+    r"[^，。；\n]{0,64}?"
+    r"(?:组织|安排|推演|分析)(?:画面|信息|内容|卖点|构图|结构)"
+)
+INTERNAL_PHYSICAL_CUE_RE = re.compile(
+    r"(?:材质|材料|部件|组件|灯板|隔仓|弹簧|镁合金|蜂窝|导流|填充|线圈|电路|"
+    r"芯片|NPU|处理器|镜片|电池|面板|支撑|连接|外壳|骨架|腔体|齿轮|卡扣|螺纹|轴承|"
+    r"磁吸|防水|防漏|散热|自动对焦|滤芯|安全锁定|四点支撑|密封|过滤|导热|电机|传感器|"
+    r"锁止|开合|阀门|泵体|风道|声学腔|光学|天线|接口|屏蔽|模块|框架)"
+)
+INTERNAL_META_SUBJECT_RE = re.compile(
+    r"(?:设计师|设计团队|制作阶段|设计阶段|创作阶段|规划阶段|创作时|设计环节|工作流|脑内|暗线|"
+    r"运营|营销|团队|后台|幕后|提示词|流程|推理|思考|决策|成图任务|"
+    r"画布与布局|参考图使用|商品锁定|最终画面|模型|策略)\s*$"
+)
+INTERNAL_GENERIC_SUBJECT_RE = re.compile(
+    r"(?:商品|产品|目标商品|目标产品|物品|主体|画面|内容|用户|人群|买家)\s*$"
 )
 FORBIDDEN_VIEW_METADATA_RE = re.compile(
     r"(?:(?:背面|底部|内部|拆解|隐藏(?:结构|配件|视图)|写实视图)"
@@ -704,14 +850,54 @@ FIELD_ENGLISH_STOPWORDS = {
     "scene", "studio", "the", "to", "uhd", "ultra", "use", "visual", "with",
 }
 GENERIC_VISUAL_MODEL_TOKENS = {"3d", "4k", "8k", "ai", "cmyk", "hd", "hdr", "rgb", "uhd"}
+EXPLICIT_PRODUCT_IDENTITY_VALUE_RE = re.compile(
+    r"^\s*(?:商品|产品)(?:名称|名|身份)\s*[：:]\s*"
+    r"(?P<name>[^，。；\n]{1,80})"
+    r"(?:[，；]\s*(?:型号|款号|货号|SKU|版本)\s*[：:]?\s*[^，。；\n]{1,40})?\s*$",
+    re.IGNORECASE,
+)
+IDENTITY_ENGLISH_INSTRUCTION_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9])(?:create|generate|render|use|keep|maintain|"
+    r"background|lighting|layout|scene|photo|photography|realistic|"
+    r"cinematic|hyperrealistic|packshot)(?![A-Za-z0-9])"
+)
 
 
-def _is_descriptive_field_language_valid(text: str) -> bool:
+def _is_descriptive_field_language_valid(text: str, *, allow_product_identity: bool = False) -> bool:
     """公开描述字段以中文为主；仅放行紧凑品牌/型号标识与逐字原文。"""
 
     instruction_text = _normalize_security_text(_instruction_language_text(text))
     if NON_CHINESE_SCRIPT_RE.search(instruction_text):
         return False
+    # 商品锁定中的商品名称可能是完整英文型号，并常在名称后附带“保持
+    # 可见原文”等中文约束。先只取名称段判断身份，不把型号中的
+    # Camera、Studio、Display 等正常商品词误认为英文生图指令。
+    if allow_product_identity:
+        identity_prefix = re.match(
+            r"^\s*(?:商品|产品)(?:名称|名|身份)\s*[：:]\s*(?P<name>[^，；\n]+)",
+            instruction_text,
+            re.IGNORECASE,
+        )
+        if identity_prefix is not None:
+            identity_name = identity_prefix.group("name").strip()
+            identity_tokens = re.findall(r"[A-Za-z][A-Za-z0-9._/+()&' -]*", identity_name)
+            if (
+                identity_name
+                and len(identity_name) <= 96
+                and len(identity_tokens) <= 12
+                and IDENTITY_ENGLISH_COMMAND_RE.search(identity_name) is None
+            ):
+                return True
+    explicit_identity = EXPLICIT_PRODUCT_IDENTITY_VALUE_RE.fullmatch(instruction_text)
+    if explicit_identity is not None:
+        identity_text = explicit_identity.group()
+        latin_tokens = re.findall(r"[A-Za-z][A-Za-z0-9._/+()-]*", identity_text)
+        if (
+            len(identity_text) <= 128
+            and len(latin_tokens) <= 10
+            and IDENTITY_ENGLISH_INSTRUCTION_RE.search(identity_text) is None
+        ):
+            return True
     chinese_count = len(CHINESE_RE.findall(instruction_text))
     latin_tokens = re.findall(r"[A-Za-z][A-Za-z0-9._/-]*", instruction_text)
     latin_count = len(LATIN_CHARACTER_RE.findall(instruction_text))
@@ -749,6 +935,15 @@ def _is_descriptive_field_language_valid(text: str) -> bool:
         for token in compact_tokens
     )
     has_model_signal = specific_alphanumeric or mixed_case_brand or specific_acronym or numeric_with_name
+    if (
+        allow_product_identity
+        and 1 <= len(compact_tokens) <= 10
+        and len(compact) <= 96
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/+() '&-]*", compact)
+        and has_model_signal
+        and IDENTITY_ENGLISH_INSTRUCTION_RE.search(compact) is None
+    ):
+        return True
     has_english_instruction_token = any(
         token.casefold() in FIELD_ENGLISH_STOPWORDS
         or any(token.casefold().startswith(word) for word in ("cinematic", "hyperrealistic", "packshot", "render"))
@@ -954,6 +1149,226 @@ def _contains_forbidden_view_metadata(text: str) -> bool:
         if SAFE_VIEW_METADATA_EXCLUSION_RE.search(clause):
             continue
         if _is_evidence_bounded_diagram_clause(text, match.start(), match.end()):
+            continue
+        return True
+    return False
+
+
+def _internal_subject_context(text: str, marker_start: int) -> tuple[str, str]:
+    """返回内部词前的短语和所在行，供区分流程语句与商品结构事实。"""
+
+    clause_start = max(
+        text.rfind(separator, 0, marker_start)
+        for separator in "，。；\n：:【（(“‘「『《〈"
+    ) + 1
+    line_start = text.rfind("\n", 0, marker_start) + 1
+    prefix = text[clause_start:marker_start].strip(" \t-—–")
+    line_prefix = text[line_start:marker_start]
+    return prefix, line_prefix
+
+
+def _clause_text(text: str, start: int, end: int) -> str:
+    """返回包含指定片段的短句，避免跨句把商品事实和方法论拼在一起。"""
+    clause_start = max(text.rfind(separator, 0, start) for separator in "，。；\n") + 1
+    clause_ends = [text.find(separator, end) for separator in "，。；\n"]
+    clause_end = min((position for position in clause_ends if position >= 0), default=len(text))
+    return text[clause_start:clause_end]
+
+
+def _is_product_internal_clause(text: str, match: re.Match[str]) -> bool:
+    """判断“内部”是否在描述商品真实结构/工作机制，而非模型方法。"""
+    if match.groupdict().get("marker") != "内部":
+        return False
+    clause = _clause_text(text, match.start(), match.end())
+    if not INTERNAL_PHYSICAL_CUE_RE.search(clause):
+        return False
+    # 一旦把机制当作组织画面、卖点或内容的骨架，语义已回到内部方法，
+    # 即使同时出现“防水/散热”等商品词也不能放行。
+    if INTERNAL_VISUAL_PROCESS_RE.search(clause) or re.search(
+        r"(?:组织|安排|推演|分析|编排|排布|规划|构建|强化|指导|作为|服务)"
+        r"[^，。；\n]{0,16}(?:画面|内容|卖点|构图|信息|文案|视觉|布局|主图|分镜|紧迫感|转化|购买|行动)",
+        clause,
+    ):
+        return False
+    prefix, line_prefix = _internal_subject_context(text, match.start("marker"))
+    is_product_field = re.search(r"商品锁定|产品锁定|商品名称|产品名称", line_prefix) is not None
+    if INTERNAL_META_SUBJECT_RE.search(prefix) and not is_product_field:
+        return False
+    # 有明确商品字段或实体主语时，物理线索优先解释为商品事实；即使
+    # 提示词省略了“产品/设备”等主语，只要没有后台方法词也可保留。
+    if is_product_field:
+        return True
+    return not re.search(r"(?:营销|消费者|心理|增长|转化|购买|模型|策略|框架|理论|方法|路径|推演)", prefix)
+
+
+def _contains_forbidden_internal_label(text: str) -> bool:
+    """拦截正向内部标签；明确禁止/排除这些标签时不误报。"""
+    for pattern in (FORBIDDEN_INTERNAL_RE, FORBIDDEN_INTERNAL_REASONING_RE, FORBIDDEN_REASONING_RECORD_RE):
+        for match in pattern.finditer(text):
+            if _is_locally_negated(text, match.start()):
+                continue
+            # “内部依据/内部使用”可能只是商品内部结构事实。对没有命名
+            # marker 的通用推理正则，也复用同一物理事实判定，避免把
+            # NPU、齿轮、散热、防漏等真实构造误当成后台记录。
+            clause = _clause_text(text, match.start(), match.end())
+            prefix, line_prefix = _internal_subject_context(text, match.start())
+            is_product_field = re.search(r"商品锁定|产品锁定|商品名称|产品名称", line_prefix) is not None
+            if (
+                "内部" in clause
+                and INTERNAL_PHYSICAL_CUE_RE.search(clause)
+                and not INTERNAL_VISUAL_PROCESS_RE.search(clause)
+                and (not INTERNAL_META_SUBJECT_RE.search(prefix) or is_product_field)
+                and not re.search(r"(?:营销|消费者|心理|增长|转化|模型|策略|框架|理论|方法|路径|推演)", prefix)
+                and not re.search(r"(?:判断|思考|分析|记录|草案|摘要|备注|取舍|审稿|复盘)", clause)
+                and re.search(r"(?:内部[^，。；\n]{0,20}(?:采用|使用|包含|具有|依据|展示|还原|结构|机制|框架)|"
+                              r"(?:商品|产品|设备|相机|手机|杯盖|包装|控制器)[^，。；\n]{0,8}内部)", clause)
+            ):
+                continue
+            return True
+    return False
+
+
+def _contains_forbidden_internal_process(text: str) -> bool:
+    """拦截内部方法/流程表达，同时保留明确的商品内部结构事实。"""
+
+    if _contains_forbidden_internal_label(text):
+        return True
+
+    for pattern in (INTERNAL_METHOD_EXPRESSION_RE, INTERNAL_VISUAL_PROCESS_RE):
+        for match in pattern.finditer(text):
+            if _is_locally_negated(text, match.start()):
+                continue
+            if _is_product_internal_clause(text, match):
+                continue
+            marker = match.group("marker")
+            if marker in {"幕后", "后台"}:
+                return True
+            prefix, line_prefix = _internal_subject_context(text, match.start("marker"))
+            if INTERNAL_META_SUBJECT_RE.search(prefix):
+                return True
+            if (
+                marker == "内部"
+                and prefix
+                and not INTERNAL_GENERIC_SUBJECT_RE.search(prefix)
+                and match.groupdict().get("method") in {"框架", "矩阵"}
+            ):
+                # “相机内部”“床垫内部”等明确实体主语优先解释为
+                # 商品构造；“商品内部”“画面内部”仍需物理线索才能放行。
+                continue
+            # “内部”在商品锁定字段中可能是实物构造描述。只有出现
+            # 材料、部件、腔体、灯板等物理线索时才放行；抽象模型、理论、
+            # 策略等没有物理线索时仍按内部方法泄露处理。
+            clause_end = min(
+                (
+                    position
+                    for position in (
+                        text.find(separator, match.end())
+                        for separator in "，。；\n"
+                    )
+                    if position >= 0
+                ),
+                default=len(text),
+            )
+            clause_text = text[match.start() : clause_end]
+            if INTERNAL_PHYSICAL_CUE_RE.search(clause_text):
+                if prefix and not INTERNAL_META_SUBJECT_RE.search(prefix):
+                    continue
+                if re.search(r"商品锁定|产品锁定|商品名称|产品名称", line_prefix):
+                    continue
+            return True
+    for match in UNPREFIXED_METHOD_EXPRESSION_RE.finditer(text):
+        if _is_locally_negated(text, match.start()):
+            continue
+        return True
+    return False
+
+
+def _contains_forbidden_marketing_model(text: str) -> bool:
+    """拦截最终分镜中的营销模型/内部红队标签，逐字保留原文已在上游移除。"""
+
+    if _contains_forbidden_internal_process(text):
+        return True
+
+    matches_by_start: dict[int, re.Match[str]] = {}
+    for pattern in (FORBIDDEN_MARKETING_MODEL_RE, FORBIDDEN_SPLIT_MARKETING_MODEL_RE):
+        for match in pattern.finditer(text):
+            current = matches_by_start.get(match.start())
+            if current is None or match.end() > current.end():
+                matches_by_start[match.start()] = match
+    for match in (matches_by_start[start] for start in sorted(matches_by_start)):
+        if _is_locally_negated(text, match.start()):
+            continue
+        # 品牌、型号、SKU、包装原文等是商品身份字段；其中出现同名
+        # 缩写时应保留真实身份，不能被当作内部营销模型。若同一短句
+        # 在身份字段后又出现“采用/模型/策略”等内部语境，仍继续拦截。
+        clause_start = max(text.rfind(separator, 0, match.start()) for separator in "，。；\n") + 1
+        clause_end_positions = [text.find(separator, match.end()) for separator in "，。；\n"]
+        clause_end = min(
+            (position for position in clause_end_positions if position >= 0),
+            default=len(text),
+        )
+        clause = text[clause_start:clause_end]
+        relative_start = match.start() - clause_start
+        relative_end = match.end() - clause_start
+        prefix = clause[:relative_start]
+        suffix = clause[relative_end:]
+        compact_token = re.sub(r"[\s.·•_/-]+", "", match.group()).casefold()
+
+        # 少量与营销缩写同名、但有明确行业语义的术语只在窄范围放行。
+        # 一旦同一短句又出现模型/框架/策略等内部语境，仍按泄露处理。
+        if (
+            compact_token == "4c"
+            and re.match(r"^\s*(?:印刷|胶印|四色(?:印刷|胶印|色彩)?|色彩印刷)", suffix)
+            and MARKETING_INTERNAL_SUFFIX_RE.search(suffix) is None
+        ):
+            continue
+        if (
+            compact_token == "ice"
+            and (
+                re.match(r"^\s*(?:冷饮(?:模式|功能|档位)|制冰(?:模式|功能|档位))", suffix)
+                or (
+                    re.match(r"^\s*模式[^，。；\n]{0,16}(?:界面|屏幕|文字|标签|按钮|图标)", suffix)
+                    and re.search(r"(?:显示|保留|呈现|还原)\s*$", prefix)
+                )
+            )
+            and MARKETING_INTERNAL_SUFFIX_RE.search(suffix) is None
+        ):
+            continue
+
+        suffix_has_internal_context = MARKETING_INTERNAL_SUFFIX_RE.search(suffix) is not None
+        identity_cues = list(MARKETING_IDENTITY_CUE_RE.finditer(prefix))
+        if identity_cues:
+            last_identity = identity_cues[-1]
+            explicit_product_identity = re.fullmatch(
+                r"(?:商品|产品)(?:名称|名|型号)",
+                last_identity.group(),
+                re.IGNORECASE,
+            ) is not None
+            if (
+                MARKETING_INTERNAL_CUE_RE.search(prefix[last_identity.end() :]) is None
+                and (explicit_product_identity or not suffix_has_internal_context)
+            ):
+                continue
+
+        # 允许在其他公开字段中自然复用真实商品身份，但只接受明确的
+        # “目标商品/锁定”语境，或带商品外观事实的“保持/还原/呈现”语境。
+        # “保持AIDA框架”“目标商品为FOMO策略”等仍由内部后缀拦截。
+        if not suffix_has_internal_context and (
+            MARKETING_STRONG_PRODUCT_PREFIX_RE.search(prefix)
+            or MARKETING_PRODUCT_VISUAL_SUFFIX_RE.match(suffix)
+            or (
+                MARKETING_PRODUCT_ACTION_PREFIX_RE.search(prefix)
+                and re.search(r"[\u3400-\u9fff]", suffix)
+                and not re.match(r"\s*(?:模型|框架|策略|理论|法则|效应|原则|矩阵|方法|路径|循环|漏斗)", suffix)
+            )
+            or (
+                MARKETING_PRODUCT_ACTION_PREFIX_RE.search(prefix)
+                and MARKETING_PRODUCT_MODE_CONTEXT_RE.match(suffix) is not None
+            )
+        ):
+            continue
+
+        if MARKETING_IDENTITY_SUFFIX_RE.match(suffix.lstrip()) and not suffix_has_internal_context:
             continue
         return True
     return False
@@ -1229,10 +1644,11 @@ def validate_storyboard(markdown: str, *, partial: bool = False) -> list[str]:
     if FORBIDDEN_SECRET_RE.search(security_scan_text):
         raise StoryboardValidationError("最终分镜疑似包含凭证或私钥")
     if (
-        FORBIDDEN_INTERNAL_RE.search(public_security_scan_text)
+        _contains_forbidden_internal_label(public_security_scan_text)
         or _contains_forbidden_view_metadata(public_security_scan_text)
+        or _contains_forbidden_marketing_model(public_security_scan_text)
     ):
-        raise StoryboardValidationError("最终分镜包含内部评分、审查过程或测试信息")
+        raise StoryboardValidationError("最终分镜包含内部流程、营销模型或审查信息")
     if _contains_asserted_view_annotation(public_security_scan_text):
         raise StoryboardValidationError("最终分镜不得出现置信度或视图推断性质标签")
     if UNRESOLVED_CONTEXT_RE.search(public_security_scan_text):
@@ -1289,7 +1705,10 @@ def validate_storyboard(markdown: str, *, partial: bool = False) -> list[str]:
             raise StoryboardValidationError(f"{storyboard_id}缺少必需字段：{'、'.join(missing)}")
         for field_name in DESCRIPTIVE_PUBLIC_FIELDS:
             field_value = fields.get(field_name)
-            if field_value and not _is_descriptive_field_language_valid(field_value):
+            if field_value and not _is_descriptive_field_language_valid(
+                field_value,
+                allow_product_identity=field_name == "商品锁定",
+            ):
                 raise StoryboardValidationError(f"{storyboard_id}的{field_name}必须以中文描述为主")
 
         output_object = fields["输出对象"]

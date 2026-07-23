@@ -366,6 +366,460 @@ class StoryboardValidatorTests(unittest.TestCase):
                 frame = make_frame(1, "主图-01", usage, usage)
                 self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
 
+    def test_natural_prohibitions_with_model_inference_are_not_pending_status(self) -> None:
+        safe_phrases = (
+            "隐藏结构不能由模型推断",
+            "不能作为生成参考输入",
+            "不能由模型补画未知背面",
+        )
+        for phrase in safe_phrases:
+            with self.subTest(phrase=phrase):
+                usage = (
+                    "已分析全部有效参考视觉；本张实际向生成模型提供多张同款参考图，"
+                    "按目标SKU筛选商品身份和结构，其他SKU不作为生成参考输入，同款资料一致，无需裁决；"
+                    f"{phrase}"
+                )
+                frame = make_frame(1, "主图-01", usage, usage)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_marketing_model_and_internal_role_labels_are_rejected(self) -> None:
+        labels = (
+            "FABE模型",
+            "AIDA阶段",
+            "USP",
+            "RTB证据",
+            "买家红队",
+            "增长循环",
+            "心理模型",
+        )
+        base = (
+            "本张实际向生成模型提供多张同款参考图，按目标SKU筛选商品身份、结构和颜色，"
+            "同款资料一致，无需裁决"
+        )
+        for label in labels:
+            with self.subTest(label=label):
+                frame = make_frame(1, "主图-01", prompt_reference_usage=f"{base}；内部采用{label}")
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_marketing_term_inside_explicit_visible_original_is_allowed(self) -> None:
+        base = (
+            "已分析全部有效参考视觉；本张实际向生成模型提供多张同款参考图，按目标SKU筛选商品身份、结构和颜色，"
+            "同款资料一致，无需裁决；逐字保留原文：“FOMO”"
+        )
+        frame = make_frame(1, "主图-01", reference_usage=base, prompt_reference_usage=base)
+        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_real_product_identifiers_named_like_marketing_models_are_allowed(self) -> None:
+        base = (
+            "已分析全部有效参考视觉；本张实际向生成模型提供一张同款参考图，按目标SKU筛选商品身份、结构和颜色，"
+            "同款资料一致，无需裁决"
+        )
+        identity_phrases = (
+            "商品锁定：AIDA品牌蓝牙耳机，型号AIDA Pro，保持可见原文",
+            "商品锁定：FAST品牌扫地机，型号FAST-200，保持可见原文",
+            "商品锁定：FOMO系列收纳盒，型号FOMO-1，保持可见原文",
+            "商品锁定：品牌为USP，款号RTB，保持可见原文",
+            "商品锁定：产品名称为AIPL旅行杯，版本FAST，保持可见原文",
+            "认证：LCA，保持证据原文",
+            "可见文字：Goodhart，保持证据原文",
+        )
+        for phrase in identity_phrases:
+            with self.subTest(phrase=phrase):
+                usage = f"{base}；{phrase}"
+                frame = make_frame(1, "主图-01", reference_usage=usage, prompt_reference_usage=usage)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_expanded_marketing_model_labels_are_rejected(self) -> None:
+        labels = (
+            "ELM模型",
+            "4U框架",
+            "CAGE模型",
+            "KOC策略",
+            "消费决策心理学",
+            "内容循环",
+            "六顶思考帽",
+            "Growth Loop",
+            "Hook-Proof-Close",
+            "双钻",
+            "Goodhart定律",
+        )
+        base = (
+            "本张实际向生成模型提供全部同款参考图，按目标SKU筛选商品身份、结构和颜色，"
+            "同款资料一致，无需裁决"
+        )
+        for label in labels:
+            with self.subTest(label=label):
+                frame = make_frame(1, "主图-01", prompt_reference_usage=f"{base}；内部采用{label}")
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+        disguised = f"{base}；商品锁定：保持商品真实，采用AIDA模型组织画面"
+        frame = make_frame(1, "主图-01", reference_usage=disguised, prompt_reference_usage=disguised)
+        with self.assertRaises(StoryboardValidationError):
+            validate_storyboard(make_storyboard([frame]))
+
+    def test_marketing_aliases_traditional_text_and_split_acronyms_are_rejected(self) -> None:
+        labels = (
+            "4A模型",
+            "O5A模型",
+            "福格行为模型",
+            "STDC模型",
+            "NSM模型",
+            "5Why模型",
+            "古德哈特定律",
+            "OST模型",
+            "Stage Gate模型",
+            "營銷模型",
+            "心理紅隊",
+            "F.A.B.E模型",
+            "F/A/B/E模型",
+            "A I D A阶段",
+            "增長循環",
+            "框架效应",
+        )
+        base = (
+            "本张实际向生成模型提供全部同款参考图，按目标SKU筛选商品身份、结构和颜色，"
+            "同款资料一致，无需裁决"
+        )
+        for label in labels:
+            with self.subTest(label=label):
+                frame = make_frame(1, "主图-01", prompt_reference_usage=f"{base}；内部采用{label}")
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_internal_marketing_context_overrides_identity_like_suffixes(self) -> None:
+        internal_phrases = (
+            "内部采用AIDA品牌框架组织画面",
+            "内部采用FOMO系列策略强化紧迫感",
+            "内部采用FAST-200模型推演画面",
+        )
+        base = (
+            "本张实际向生成模型提供全部同款参考图，按目标SKU筛选商品身份、结构和颜色，"
+            "同款资料一致，无需裁决"
+        )
+        for phrase in internal_phrases:
+            with self.subTest(phrase=phrase):
+                frame = make_frame(1, "主图-01", prompt_reference_usage=f"{base}；{phrase}")
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_explicit_internal_model_is_rejected_after_field_punctuation(self) -> None:
+        task_values = (
+            "【内部采用需求张力模型组织画面】",
+            "内部调用产品机会模型组织画面",
+            "【设计时内部采用需求张力模型组织画面】",
+            "【内部运用产品机会模型组织画面】",
+            "【内部套用需求张力模型组织画面】",
+            "【内部借助产品机会框架安排内容】",
+            "【内部按需求张力模型分析卖点】",
+            "【内部采纳购买阻力阶梯模型】",
+            "【内部援引信任增益曲线模型】",
+            "【幕后以需求热度分层理论】",
+            "【内部参照场景触发链方法安排构图】",
+            "【内部依托犹豫消解路径模型】",
+            "【内部借鉴品类进入门槛矩阵】",
+            "【后台采用首购阻力曲线模型】",
+            "【幕后调用复购触发器模型】",
+            "【内部将客群犹豫指数作为模型】",
+            "【设计师内部采纳证据密度曲线模型】",
+            "【幕后依据价格接受坡度框架】",
+            "【制作阶段内部引用兴趣升温理论】",
+            "【内部采纳购买动因叠加模型】",
+            "【幕后运用信任斜坡框架】",
+            "【制作阶段内部援引决策阻尼理论】",
+        )
+        for task_value in task_values:
+            with self.subTest(task_value=task_value):
+                frame = make_frame(1, "主图-01").replace(
+                    "- 成图任务：【清楚建立商品识别】",
+                    f"- 成图任务：{task_value}",
+                )
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_internal_reasoning_record_labels_are_rejected(self) -> None:
+        task_values = (
+            "内部思考：先判断买家疑虑，再决定画面顺序",
+            "我的推理：先判断买家疑虑，再决定画面顺序",
+            "分析过程：先判断买家疑虑，再决定画面顺序",
+            "后台推演：先判断买家疑虑，再决定画面顺序",
+            "仅供内部：先判断买家疑虑，再决定画面顺序",
+            "内部思考先判断买家疑虑，再决定画面顺序",
+            "我的推理如下：先判断买家疑虑，再决定画面顺序",
+            "后台分析先判断买家疑虑，再决定画面顺序",
+            "仅供内部使用，先判断买家疑虑，再决定画面顺序",
+            "内部判断记录",
+            "供内部参考的思考",
+            "决策依据记录",
+            "草稿推理",
+            "幕后分析笔记",
+            "内部分析备忘",
+            "推导笔记",
+            "思路草稿",
+            "取舍记录",
+            "内部结论记录",
+            "布局选择理由",
+            "设计决策过程",
+            "仅供团队查看",
+            "不对外展示的分析",
+            "模型思考摘要",
+            "内部演算",
+            "内部自检思路",
+            "创作推理备忘",
+        )
+        for task_value in task_values:
+            with self.subTest(task_value=task_value):
+                frame = make_frame(1, "主图-01").replace(
+                    "- 成图任务：【清楚建立商品识别】",
+                    f"- 成图任务：【{task_value}】",
+                )
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_long_english_product_names_are_allowed_in_identity_fields(self) -> None:
+        product_names = (
+            "Microsoft Surface Laptop Studio 2",
+            "Apple Studio Display",
+            "Samsung The Freestyle 2nd Gen",
+            "Bose QuietComfort Ultra Headphones",
+        )
+        for product_name in product_names:
+            with self.subTest(product_name=product_name):
+                frame = make_frame(1, "主图-01").replace(
+                    "- 商品锁定：【保持轮廓、结构、比例、颜色与可见原文】",
+                    f"- 商品锁定：【商品名称：{product_name}】",
+                )
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_real_product_name_containing_a_model_term_is_allowed(self) -> None:
+        frame = make_frame(1, "主图-01").replace(
+            "- 商品锁定：【保持轮廓、结构、比例、颜色与可见原文】",
+            "- 商品锁定：【商品名称：波特五力模型教具，型号PF-5】",
+        )
+        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_real_product_identity_contexts_are_allowed_across_storyboard_fields(self) -> None:
+        identity_phrases = (
+            "锁定AIDA Pro蓝牙耳机的真实轮廓",
+            "目标商品为AIDA Pro蓝牙耳机",
+            "保持AIDA-X1蓝牙耳机外观",
+            "将AIDA Pro蓝牙耳机置于台面中央",
+            "保持FACT+S设备外观",
+        )
+        for phrase in identity_phrases:
+            with self.subTest(phrase=phrase):
+                frame = make_frame(1, "主图-01")
+                frame = frame.replace(
+                    "- 商品锁定：【保持轮廓、结构、比例、颜色与可见原文】",
+                    f"- 商品锁定：【{phrase}，保持结构、比例、颜色与可见原文】",
+                )
+                frame = frame.replace(
+                    "- 最终画面：【单个商品稳定放置并成为唯一焦点】",
+                    f"- 最终画面：【{phrase}，单个商品稳定放置并成为唯一焦点】",
+                )
+                frame = frame.replace(
+                    "完整保持商品轮廓、结构、比例、颜色和可见原文",
+                    f"{phrase}，完整保持商品轮廓、结构、比例、颜色和可见原文",
+                )
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_real_product_action_contexts_named_like_models_are_allowed(self) -> None:
+        action_phrases = (
+            "画面清楚展示AIDA Pro蓝牙耳机",
+            "画面清楚展示FAST-200扫地机",
+            "画面清楚展示PAS传感器与线束接口",
+            "启用RACE模式，仪表界面保留真实文字",
+        )
+        for phrase in action_phrases:
+            with self.subTest(phrase=phrase):
+                frame = make_frame(1, "主图-01")
+                frame = frame.replace(
+                    "- 最终画面：【单个商品稳定放置并成为唯一焦点】",
+                    f"- 最终画面：【{phrase}，单个商品稳定放置并成为唯一焦点】",
+                )
+                frame = frame.replace(
+                    "完整保持商品轮廓、结构、比例、颜色和可见原文",
+                    f"{phrase}，完整保持商品轮廓、结构、比例、颜色和可见原文",
+                )
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_printing_and_product_mode_terms_named_like_models_are_allowed(self) -> None:
+        domain_phrases = (
+            "采用4C印刷工艺还原包装色彩",
+            "后期采用4C胶印工艺并复核色彩",
+            "保留ICE冷饮模式的真实界面文字",
+            "显示ICE模式的可见界面文字",
+        )
+        for phrase in domain_phrases:
+            with self.subTest(phrase=phrase):
+                frame = make_frame(1, "主图-01")
+                frame = frame.replace(
+                    "- 商品锁定：【保持轮廓、结构、比例、颜色与可见原文】",
+                    f"- 商品锁定：【{phrase}，保持轮廓、结构、比例、颜色与可见原文】",
+                )
+                frame = frame.replace(
+                    "完整保持商品轮廓、结构、比例、颜色和可见原文",
+                    f"{phrase}，完整保持商品轮廓、结构、比例、颜色和可见原文",
+                )
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_additional_documented_model_names_are_rejected(self) -> None:
+        labels = (
+            "禀赋效应",
+            "现状偏误",
+            "心理账户",
+            "叙事传输",
+            "格式塔原则",
+            "Persona用户画像",
+            "Cohort分析",
+            "选品五力",
+            "货盘金字塔",
+            "价格带",
+            "模块化资产策略",
+            "品牌原型",
+            "DTC模型",
+            "漏斗组织画面",
+            "消费者采用路径",
+            "首屏截停",
+            "痛点递进",
+            "竞品差异化",
+            "感官转译",
+            "场景穿透",
+            "合规信任",
+            "价值解释",
+            "情绪溢价",
+            "行动促进",
+            "顾虑兜底",
+            "首因效应",
+            "近因效应",
+            "序位效应",
+            "冯·雷斯托夫效应",
+            "互惠原则",
+            "认知失调",
+            "默认效应",
+            "支付痛苦",
+            "目标梯度",
+            "心理距离",
+            "解释水平",
+            "信任状组合",
+            "电商全链路",
+            "消费仪式",
+            "Campaign Brief",
+            "Creative Brief",
+            "Message Hierarchy",
+            "Content Architecture",
+            "隐喻思维",
+            "互惠",
+            "非目标人群",
+            "不适用场景",
+            "内容场",
+            "关系链",
+            "品牌人格",
+            "支付意愿",
+            "相似人群",
+            "品牌资产",
+            "AI代理购物",
+            "Gap Selling",
+            "留存阶段",
+        )
+        base = (
+            "本张实际向生成模型提供全部同款参考图，按目标SKU筛选商品身份、结构和颜色，"
+            "同款资料一致，无需裁决"
+        )
+        for label in labels:
+            with self.subTest(label=label):
+                frame = make_frame(1, "主图-01", prompt_reference_usage=f"{base}；内部采用{label}")
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_physical_funnel_product_is_not_mistaken_for_a_marketing_funnel(self) -> None:
+        frame = make_frame(1, "主图-01")
+        frame = frame.replace(
+            "- 商品锁定：【保持轮廓、结构、比例、颜色与可见原文】",
+            "- 商品锁定：【目标商品为不锈钢漏斗，保持轮廓、结构、比例、颜色与可见原文】",
+        )
+        frame = frame.replace(
+            "完整保持商品轮廓、结构、比例、颜色和可见原文",
+            "将不锈钢漏斗置于台面中央，完整保持商品轮廓、结构、比例、颜色和可见原文",
+        )
+        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_explicit_internal_model_sentences_are_rejected_without_dictionary_entries(self) -> None:
+        internal_sentences = (
+            "内部采用波特五力模型组织画面",
+            "内部采用稀缺与时效模型组织画面",
+            "内部采用边际ROI模型组织画面",
+            "内部采用因果推断模型组织画面",
+            "内部采用价格弹性模型组织画面",
+            "内部采用捆绑定价模型组织画面",
+            "内部采用价值阶梯模型组织画面",
+            "内部采用公域—私域—品牌域模型组织画面",
+            "内部采用私域四阵地模型组织画面",
+            "内部采用内容场中心场营销场模型组织画面",
+            "内部采用关系链模型组织画面",
+            "内部采用5W2H模型组织画面",
+            "内部采用创新十类组织画面",
+            "内部采用视觉独特资产组织画面",
+        )
+        base = (
+            "本张实际向生成模型提供全部同款参考图，按目标SKU筛选商品身份、结构和颜色，"
+            "同款资料一致，无需裁决"
+        )
+        for sentence in internal_sentences:
+            with self.subTest(sentence=sentence):
+                frame = make_frame(1, "主图-01", prompt_reference_usage=f"{base}；{sentence}")
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_real_product_internal_structure_language_is_allowed(self) -> None:
+        product_facts = (
+            "产品内部采用蜂窝支撑结构",
+            "杯体内部采用漏斗形导流结构",
+            "行李箱内部使用镁合金框架",
+            "相机内部采用模块化框架",
+            "包装内部采用矩阵式隔仓",
+            "控制器内部使用环形矩阵灯板",
+            "床垫内部采用弹簧矩阵",
+        )
+        for product_fact in product_facts:
+            with self.subTest(product_fact=product_fact):
+                frame = make_frame(1, "主图-01")
+                frame = frame.replace(
+                    "- 商品锁定：【保持轮廓、结构、比例、颜色与可见原文】",
+                    f"- 商品锁定：【{product_fact}，保持轮廓、结构、比例、颜色与可见原文】",
+                )
+                frame = frame.replace(
+                    "完整保持商品轮廓、结构、比例、颜色和可见原文",
+                    f"{product_fact}，完整保持商品轮廓、结构、比例、颜色和可见原文",
+                )
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_documented_model_names_are_rejected_without_an_internal_prefix(self) -> None:
+        labels = (
+            "波特五力模型",
+            "稀缺与时效模型",
+            "边际ROI模型",
+            "因果推断模型",
+            "价格弹性模型",
+            "捆绑定价模型",
+            "价值阶梯模型",
+            "公域—私域—品牌域模型",
+            "私域四阵地模型",
+            "5W2H模型",
+            "创新十类",
+            "视觉独特资产",
+        )
+        base = (
+            "本张实际向生成模型提供全部同款参考图，按目标SKU筛选商品身份、结构和颜色，"
+            "同款资料一致，无需裁决"
+        )
+        for label in labels:
+            with self.subTest(label=label):
+                frame = make_frame(1, "主图-01", prompt_reference_usage=f"{base}；依据{label}组织画面")
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
     def test_general_unresolved_multi_reference_wording_is_rejected(self) -> None:
         unresolved_claims = (
             "资料不确定",
@@ -480,6 +934,109 @@ class StoryboardValidatorTests(unittest.TestCase):
         frame = make_frame(1, "主图-01", usage, usage)
         with self.assertRaises(StoryboardValidationError):
             validate_storyboard(make_storyboard([frame]))
+
+    def test_unprefixed_methodology_expressions_are_rejected(self) -> None:
+        """方法论不能借助“创作时/暗中/工作流里”等词绕过公开交付边界。"""
+        expressions = (
+            "依据需求张力模型组织画面",
+            "采用购买阻力框架安排内容",
+            "按照信任增益效应推演卖点",
+            "基于产品机会模型分析画面",
+            "暗中套用场景代入套路排布画面",
+            "制作端依照信任升温范式编排卖点",
+            "在脑内按复购触发机制安排画面",
+            "将复购触发模型作为构图骨架",
+            "设计环节运用品牌人格体系规划内容",
+            "工作流里借助选择架构组织构图",
+            "创作时采用价格接受曲线推演卖点",
+        )
+        base = (
+            "本张实际向生成模型提供全部同款参考图，按目标SKU筛选商品身份、结构和颜色，"
+            "同款资料一致，无需裁决"
+        )
+        for expression in expressions:
+            with self.subTest(expression=expression):
+                frame = make_frame(1, "主图-01", prompt_reference_usage=f"{base}；{expression}")
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_reasoning_record_labels_are_rejected_without_internal_prefix(self) -> None:
+        labels = (
+            "判断草案",
+            "方案取舍表",
+            "分析手记",
+            "选择依据",
+            "创作复盘",
+            "审稿备注",
+            "决策轨迹",
+            "草案比较",
+            "供审核的思路",
+            "候选排序记录",
+            "设计者备注",
+            "过程说明",
+            "利弊权衡",
+            "团队讨论摘要",
+            "为什么选这版：采用左侧布局",
+        )
+        for label in labels:
+            with self.subTest(label=label):
+                frame = make_frame(1, "主图-01").replace(
+                    "- 成图任务：【清楚建立商品识别】",
+                    f"- 成图任务：【{label}】",
+                )
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_explicit_negative_internal_rules_are_allowed(self) -> None:
+        negatives = (
+            "不生成虚假稀缺与时效标签",
+            "禁止输出内部判断记录",
+            "不要出现模型思考摘要",
+            "不得写出后台采用方法论的过程",
+            "禁止添加幕后分析笔记",
+        )
+        for negative in negatives:
+            with self.subTest(negative=negative):
+                frame = make_frame(1, "主图-01").replace(
+                    "商品变形，结构增减，错误颜色，错误文字，虚构背面，虚构内部，新增配件，悬浮，接触阴影错误，多主体，乱码",
+                    f"商品变形，{negative}，结构增减，错误颜色，错误文字，虚构背面，虚构内部，新增配件，悬浮，接触阴影错误，多主体，乱码",
+                )
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_product_internal_mechanisms_and_structures_are_allowed(self) -> None:
+        product_facts = (
+            "产品内部采用防漏机制",
+            "设备内部采用散热机制",
+            "相机内部采用自动对焦机制",
+            "内部采用磁吸机制",
+            "内部采用防水机制",
+            "内部采用滤芯更换机制",
+            "内部采用安全锁定机制",
+            "内部采用四点支撑机制",
+            "内部采用环形框架",
+            "手机内部使用NPU推理模型",
+            "产品内部依据已提供剖面图还原齿轮",
+            "展示产品内部框架",
+        )
+        for product_fact in product_facts:
+            with self.subTest(product_fact=product_fact):
+                frame = make_frame(1, "主图-01")
+                frame = frame.replace(
+                    "- 商品锁定：【保持轮廓、结构、比例、颜色与可见原文】",
+                    f"- 商品锁定：【{product_fact}，保持轮廓、结构、比例、颜色与可见原文】",
+                )
+                frame = frame.replace(
+                    "完整保持商品轮廓、结构、比例、颜色和可见原文",
+                    f"{product_fact}，完整保持商品轮廓、结构、比例、颜色和可见原文",
+                )
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_long_english_product_identity_with_qualifier_is_allowed(self) -> None:
+        frame = make_frame(1, "主图-01").replace(
+            "- 商品锁定：【保持轮廓、结构、比例、颜色与可见原文】",
+            "- 商品锁定：【商品名称：Blackmagic Pocket Cinema Camera 6K，保持可见原文】",
+        )
+        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
 
     def test_natural_fixed_reference_labels_are_rejected(self) -> None:
         labels = (

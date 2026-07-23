@@ -48,6 +48,7 @@ $requiredFiles = @(
     'references/product-and-reference.md'
     'references/evidence-and-feedback.md'
     'references/prebuild-and-product-card.md'
+    'references/marketing-reasoning.md'
     'references/category-adaptation.md'
     'references/confirmation-workflow.md'
     'references/image-type-index.md'
@@ -62,6 +63,7 @@ $requiredFiles = @(
     'references/storyboard-template.md'
     'scripts/validate_storyboard.py'
     'tests/test_validate_storyboard.py'
+    'tests/test_marketing_reasoning.py'
     'tests/fixtures/valid_storyboard.md'
 )
 
@@ -74,6 +76,7 @@ $expectedReferences = @(
     'preference-learning.md'
     'product-and-reference.md'
     'prebuild-and-product-card.md'
+    'marketing-reasoning.md'
     'category-adaptation.md'
     'confirmation-workflow.md'
     'prompt-writing.md'
@@ -164,6 +167,9 @@ foreach ($behavior in @(
     '授权范围',
     '工具能力画像',
     '生图与结果反馈'
+    '营销模型加速层'
+    '不改变主流程'
+    'references/marketing-reasoning.md'
 )) {
     if ($skillText -notmatch [regex]::Escape($behavior)) {
         throw "SKILL.md 缺少核心行为：$behavior"
@@ -315,6 +321,29 @@ foreach ($behavior in @('推荐图型', '买家问题', '所需证据', '生产�
     }
 }
 
+$marketingText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'references/marketing-reasoning.md')
+foreach ($behavior in @(
+    '统一编译出口',
+    'FABE',
+    'EPP',
+    'FOMO',
+    '锚定效应',
+    'AIPL',
+    'FAST',
+    'GROW',
+    '人货场',
+    '买家问题',
+    '证据需求',
+    '图片任务',
+    '不把模型名称写入最终分镜',
+    '不另建评分表',
+    '停止条件'
+)) {
+    if ($marketingText -notmatch [regex]::Escape($behavior)) {
+        throw "营销模型参考文件缺少核心行为：$behavior"
+    }
+}
+
 $categoryText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'references/category-adaptation.md')
 foreach ($trait in @(
     '身份与SKU复杂度',
@@ -388,6 +417,7 @@ if (Test-Path -LiteralPath $repositoryReadme -PathType Leaf) {
         '## 单参考图与多参考图',
         '## 图型能力库：从买家问题出发',
         '## 子智能体与自我学习',
+        '## 营销模型如何帮助 AI 更快构建分镜',
         '## 最终分镜提示词示例',
         '## 常见问题',
         '### 成品、分镜和生图数量有什么区别？',
@@ -451,6 +481,11 @@ if ($LASTEXITCODE -ne 0) {
 & $python.Source -B -X utf8 (Join-Path $skillRoot 'tests/test_validate_storyboard.py')
 if ($LASTEXITCODE -ne 0) {
     throw '分镜验证器测试失败'
+}
+
+& $python.Source -B -X utf8 (Join-Path $skillRoot 'tests/test_marketing_reasoning.py')
+if ($LASTEXITCODE -ne 0) {
+    throw '营销模型加速层测试失败'
 }
 
 Write-Host '技能结构、中文主线和最终分镜格式验证通过。'
