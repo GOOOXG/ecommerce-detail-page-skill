@@ -46,6 +46,7 @@ $requiredFiles = @(
     'SKILL.md'
     'agents/openai.yaml'
     'references/product-and-reference.md'
+    'references/evidence-and-feedback.md'
     'references/prebuild-and-product-card.md'
     'references/category-adaptation.md'
     'references/confirmation-workflow.md'
@@ -66,6 +67,7 @@ $requiredFiles = @(
 
 $expectedReferences = @(
     'enhancements.md'
+    'evidence-and-feedback.md'
     'image-set-planning.md'
     'image-type-index.md'
     'output-objects.md'
@@ -124,9 +126,10 @@ foreach ($behavior in @(
     '商品卡（待确认）',
     '用户确认',
     '已确认商品卡',
+    '首要目标、风险与工具能力画像',
     '设计需求预判与输出范围',
     '多图结构',
-    '固定5个综合方向',
+    '自适应多图结构与综合方向',
     '逐图确认/内部自动复核',
     '2-1`到`2-10',
     '不视为商品卡确认',
@@ -155,7 +158,12 @@ foreach ($behavior in @(
     '数字权益或服务商品',
     '其他SKU默认不作为生成参考输入',
     '不能把“以商品卡为准”留给看不到商品卡的生图模型',
-    '用户口述的图片清单、文件名、附件数量、替代文字、聊天摘要或“已经提供图片”的声明都不等于实际看图'
+    '用户口述的图片清单、文件名、附件数量、替代文字、聊天摘要或“已经提供图片”的声明都不等于实际看图',
+    '首要买家目标',
+    '内部轻量证据账本',
+    '授权范围',
+    '工具能力画像',
+    '生图与结果反馈'
 )) {
     if ($skillText -notmatch [regex]::Escape($behavior)) {
         throw "SKILL.md 缺少核心行为：$behavior"
@@ -166,13 +174,13 @@ $mainChain = @(
     '商品卡（待确认）',
     '用户确认',
     '已确认商品卡',
+    '首要目标/风险/工具能力画像',
     '设计需求预判与输出范围',
-    '多图结构',
-    '固定5个综合方向',
+    '自适应多图结构与综合方向',
     '图组编排',
     '逐图确认/内部自动复核',
     '最终分镜',
-    '可选生图'
+    '可选生图与结果反馈'
 )
 $chainStart = $skillText.IndexOf('`识别商品主体', [StringComparison]::Ordinal)
 if ($chainStart -lt 0) {
@@ -211,7 +219,8 @@ foreach ($behavior in @(
     '1. 递进式主次',
     '2. 等量并列',
     '3. 混合结构',
-    '固定五个综合方向',
+    '综合方向最多比较5个',
+    '自适应综合方向',
     '确认本张并继续',
     '2-1',
     '2-10',
@@ -238,6 +247,22 @@ foreach ($behavior in @(
 $planningText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'references/image-set-planning.md')
 if ($planningText -notmatch [regex]::Escape('只在已经确认的结构内编排')) {
     throw '图片规划缺少“不得静默改结构”的边界'
+}
+
+$evidenceText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'references/evidence-and-feedback.md')
+foreach ($behavior in @(
+    '首要目标',
+    '轻量主张账本',
+    '确认权限',
+    '高风险',
+    '前置工具能力画像',
+    '综合方向最多比较5个',
+    '生成结果纳入反馈',
+    '沉默、候选数量和工具失败不升级为偏好'
+)) {
+    if ($evidenceText -notmatch [regex]::Escape($behavior)) {
+        throw "证据与反馈参考文件缺少核心规则：$behavior"
+    }
 }
 foreach ($dimension in @('注意力抓取', '三秒信息效率', '信任建立', '情绪与身份', '转化驱动', '平台与无障碍适配')) {
     if ($planningText -notmatch [regex]::Escape($dimension)) {
