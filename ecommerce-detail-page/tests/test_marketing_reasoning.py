@@ -128,19 +128,6 @@ class MarketingReasoningContentTests(unittest.TestCase):
         start = self.text.index("## 模型调用卡：从触发到分镜")
         end = self.text.index("## 模型选择规则", start)
         call_cards = self.text[start:end]
-        requested = (
-            "**AIPL**",
-            "**FAST**",
-            "**GROW**",
-            "**人货场**",
-            "**AARRR**",
-            "**FOMO/错失恐惧**",
-            "**锚定效应**",
-            "**消费决策心理学（综合链）**",
-        )
-        for model in requested:
-            with self.subTest(model=model):
-                self.assertIn(model, call_cards)
         for phrase in (
             "触发问题",
             "所需输入",
@@ -153,17 +140,31 @@ class MarketingReasoningContentTests(unittest.TestCase):
         ):
             with self.subTest(field=phrase):
                 self.assertIn(phrase, call_cards)
-        # 每个模型行都必须留下可执行的证据或降级边界，防止退化成只列名称。
-        rows = [
-            line
-            for line in call_cards.splitlines()
-            if line.startswith("| **") and line.count("|") >= 4
-        ]
-        self.assertGreaterEqual(len(rows), 8)
-        for row in rows:
-            with self.subTest(row=row[:40]):
-                self.assertRegex(row, r"证据|资料|数据")
-                self.assertRegex(row, r"停止|删除|不写|不凭|缺")
+        rows = {}
+        for line in call_cards.splitlines():
+            if not line.startswith("| **") or line.count("|") < 4:
+                continue
+            label = line.split("|", 2)[1].strip().strip("*")
+            rows[label] = line
+
+        # 每个指定模型都必须在自己的表格行内同时留下专属阶段、图片动作、
+        # 输入/证据边界和停止或降级语义，不能靠其他行的词汇让测试通过。
+        expectations = {
+            "AIPL": ("认知", "兴趣", "购买", "忠诚", "主图", "证据", "停止"),
+            "FAST": ("人群总量", "转化", "高价值", "活跃", "入口", "数据", "停止"),
+            "GROW": ("渗透力", "复购力", "价格力", "延展力", "品类教育", "资料", "停止"),
+            "人货场": ("动作", "尺度", "道具", "商品事实", "刻板印象", "停止"),
+            "AARRR": ("获客", "激活", "留存", "收入", "推荐", "证据", "停止"),
+            "FOMO/错失恐惧": ("截止时间", "库存", "预约窗口", "真实时点", "资料", "删除"),
+            "锚定效应": ("尺寸", "容量", "套装", "使用寿命", "原价", "证据", "停止"),
+            "消费决策心理学（综合链）": ("注意", "理解", "信任", "选择", "行动", "证据", "停止"),
+        }
+        self.assertEqual(set(rows), set(expectations))
+        for model, required_terms in expectations.items():
+            row = rows[model]
+            with self.subTest(model=model):
+                for term in required_terms:
+                    self.assertIn(term, row)
 
     def test_fast_and_grow_definition_priority_is_explicit(self) -> None:
         self.assertIn("FAST 与 GROW 在不同平台可能有不同释义", self.text)
@@ -181,9 +182,19 @@ class MarketingReasoningContentTests(unittest.TestCase):
                 self.assertIn(phrase, self.text)
 
     def test_skill_routes_marketing_layer_without_replacing_main_flow(self) -> None:
-        self.assertIn("references/marketing-reasoning.md", self.skill_text)
-        self.assertIn("营销模型加速层", self.skill_text)
-        self.assertIn("不改变主流程", self.skill_text)
+        expected_flow = (
+            "识别商品主体 → AI预构建 → 编号建议/手动纠正 → 商品卡（待确认） → "
+            "用户确认或明确直出授权 → 已确认商品卡 → 首要目标/风险/工具能力画像 → "
+            "设计需求预判与输出范围 → 自适应多图结构与综合方向 → 图组编排 → "
+            "逐图确认/内部自动复核 → 最终分镜 → 可选生图与结果反馈"
+        )
+        self.assertIn(expected_flow, self.skill_text)
+        light_call = self.skill_text.index("可轻量读取 [marketing-reasoning.md]")
+        formal_call = self.skill_text.index("在商品卡确认且首要目标已明确后")
+        output_scope = self.skill_text.index("### 6. 需求预判与输出范围")
+        self.assertLess(light_call, formal_call)
+        self.assertLess(formal_call, output_scope)
+        self.assertIn("不改变主流程", self.skill_text[formal_call:output_scope])
 
     def test_grow_uses_one_ecommerce_growth_definition(self) -> None:
         definition = "GROW | 渗透力、复购力、价格力、延展力"
