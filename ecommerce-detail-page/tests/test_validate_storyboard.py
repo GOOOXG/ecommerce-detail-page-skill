@@ -421,6 +421,7 @@ class StoryboardValidatorTests(unittest.TestCase):
             "商品锁定：FOMO系列收纳盒，型号FOMO-1，保持可见原文",
             "商品锁定：品牌为USP，款号RTB，保持可见原文",
             "商品锁定：产品名称为AIPL旅行杯，版本FAST，保持可见原文",
+            "商品锁定：COM-B品牌传感器，型号COM-B 200，保持可见原文",
             "认证：LCA，保持证据原文",
             "可见文字：Goodhart，保持证据原文",
         )
@@ -795,6 +796,25 @@ class StoryboardValidatorTests(unittest.TestCase):
             "AI代理购物",
             "Gap Selling",
             "留存阶段",
+            "COM-B模型",
+            "EAST框架",
+            "RATER模型",
+            "FMEA模型",
+            "ZMOT模型",
+            "PESTEL模型",
+            "MoSCoW方法",
+            "认知负荷理论",
+            "双系统理论",
+            "信息觅食",
+            "信息气味",
+            "信号理论",
+            "服务蓝图",
+            "可供性",
+            "行为线索",
+            "符号学",
+            "视觉修辞",
+            "图片任务转译框架族",
+            "创意视觉技法族",
         )
         base = (
             "本张实际向生成模型提供全部同款参考图，按目标SKU筛选商品身份、结构和颜色，"

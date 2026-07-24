@@ -399,8 +399,8 @@ FORBIDDEN_REASONING_RECORD_RE = re.compile(
 FORBIDDEN_MARKETING_MODEL_RE = re.compile(
     r"(?i)(?<![A-Za-z])(?:FABE?|AIDMA|AIDA|AISAS|ACCA|DAGMAR|PASTOR|PAS|BAB|QUEST|CDJ|"
     r"AIPL|FAST|GROW|AARRR|RACE|RFMTC|RFM|CLV|LTV|NPS|OODA|CRO|ICE|RICE|PIE|"
-    r"USP|RTB|JTBD|KANO|MECE|STP|PEST|SWOT|BCG|ANSOFF|FOMO|MEDDIC|SPIN|"
-    r"ELM|FOGG|4U|4C|4P|4E|7P|3C|4A|5A|O-?5A|STDC|NSM|5WHY|OST|TRIZ|PDCA|CAGE|EPRG|CBBE|KFS|GPM|"
+    r"USP|RTB|JTBD|KANO|MECE|STP|PESTEL|PEST|SWOT|BCG|ANSOFF|FOMO|MEDDIC|SPIN|"
+    r"ELM|FOGG|COM-?B|EAST|RATER|FMEA|ZMOT|FMOT|SMOT|MOSCOW|4U|4C|4P|4E|7P|3C|4A|5A|O-?5A|STDC|NSM|5WHY|OST|TRIZ|PDCA|CAGE|EPRG|CBBE|KFS|GPM|"
     r"FACT(?:\+S)?|DEEPLINK|ONE-ID|LOOKALIKE|KOC|K-?FACTOR|WTP|ESG|LCA|"
     r"ESP|RSP|EPP|RARRA|PMF|CMF|IMF|VOC|STEPS|LAER|PERSONA|COHORT|DTC|5W2H|A/B/N|"
     r"GROWTH\s+LOOP|CONTENT\s+LOOP|PAID\s+LOOP|VIRAL\s+LOOP|LIFT\s+TEST|"
@@ -414,16 +414,16 @@ FORBIDDEN_MARKETING_MODEL_RE = re.compile(
     r"波特五力|稀缺与时效|边际\s*ROI|因果推断|价格弹性|捆绑定价|价值阶梯|"
     r"公域[—–-]私域[—–-]品牌域|私域四阵地|创新十类|视觉独特资产|"
     r"精细加工可能性模型|前景理论|稀缺原则|权威原则|承诺一致|选择悖论|折中效应|诱饵效应|"
-    r"风险逆转|认知流畅|峰终定律|蔡格尼克效应|首因效应|近因效应|序位效应|"
+    r"风险逆转|认知流畅|认知负荷理论|双系统理论|信息觅食|信息气味|信号理论|峰终定律|蔡格尼克效应|首因效应|近因效应|序位效应|"
     r"冯·雷斯托夫效应|互惠(?:原则|效应)?|认知失调|默认效应|支付痛苦|支付意愿|目标梯度|心理距离|解释水平|"
     r"具身认知|心理模型|营销模型|"
     r"内容循环|增长循环|付费循环|病毒循环|多臂老虎机|贝叶斯(?:更新|AB测试)|"
     r"六顶思考帽|鱼骨图|决策矩阵|事前验尸|二阶思维|奥卡姆剃刀|情景规划|"
-    r"双钻|设计思维|机会解法树|旅程地图|情感化设计三层|内容4E|金字塔原则|价值主张画布|"
+    r"双钻|设计思维|机会解法树|旅程地图|服务蓝图|情感化设计三层|内容4E|金字塔原则|价值主张画布|"
     r"同理心地图|品牌棱镜|定位理论|品类心智阶梯|独特性资产|奢侈品梦想方程|"
     r"单位经济|北极星指标|指标树|逻辑树|Goodhart定律|古德哈特定律|福格行为模型|"
     r"选品五力|货盘金字塔|价格带|信任状组合|电商全链路|模块化资产策略|品牌原型|"
-    r"消费仪式|隐喻思维|"
+    r"消费仪式|隐喻思维|可供性|行为线索|符号学|视觉修辞|图片任务转译框架族|创意视觉技法族|"
     r"蓝海战略(?:画布)?|知识产权矩阵|危机沟通3T|模型红队|"
     r"(?:证据|买家|心理|平台|生产|模型)红队|非目标人群|不适用场景|关系链|品牌人格|品牌资产|"
     r"相似人群|AI代理购物|内容智能|AI归因|GenAI内容|个性化引擎|预测性营销|内容场|中心场|营销场|"
@@ -437,7 +437,8 @@ SPLITTABLE_MARKETING_ACRONYMS = (
     "FABE", "FAB", "AIDMA", "AIDA", "AISAS", "ACCA", "DAGMAR", "PASTOR", "PAS", "BAB",
     "QUEST", "CDJ", "AIPL", "FAST", "GROW", "AARRR", "RACE", "RFMTC", "RFM", "CLV", "LTV",
     "NPS", "OODA", "CRO", "ICE", "RICE", "PIE", "USP", "RTB", "JTBD", "KANO", "MECE", "STP",
-    "PEST", "SWOT", "BCG", "ANSOFF", "FOMO", "MEDDIC", "SPIN", "ELM", "FOGG", "TRIZ", "PDCA",
+    "PESTEL", "PEST", "SWOT", "BCG", "ANSOFF", "FOMO", "MEDDIC", "SPIN", "ELM", "FOGG",
+    "COMB", "EAST", "RATER", "FMEA", "ZMOT", "FMOT", "SMOT", "MOSCOW", "TRIZ", "PDCA",
     "CAGE", "EPRG", "CBBE", "KFS", "GPM", "FACT", "DEEPLINK", "ONEID", "LOOKALIKE", "KOC",
     "KFACTOR", "WTP", "ESG", "LCA", "ESP", "RSP", "RARRA", "PMF", "CMF", "IMF", "VOC",
     "STEPS", "LAER", "PERSONA", "COHORT", "DTC", "STDC", "NSM", "OST", "5WHY", "5W2H", "O5A", "5A",

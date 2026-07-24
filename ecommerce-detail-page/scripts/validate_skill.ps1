@@ -323,24 +323,58 @@ foreach ($behavior in @('推荐图型', '买家问题', '所需证据', '生产�
 
 $marketingText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'references/marketing-reasoning.md')
 foreach ($behavior in @(
-    '统一编译出口',
-    'FABE',
-    'EPP',
-    'FOMO',
-    '锚定效应',
-    'AIPL',
-    'FAST',
-    'GROW',
-    '人货场',
-    '买家问题',
-    '证据需求',
-    '图片任务',
-    '不把模型名称写入最终分镜',
-    '不另建评分表',
-    '停止条件'
+    '分类模型调用卡总库',
+    '模型/模型簇与口径',
+    '触发问题与所需输入',
+    '阶段动作与图片落点',
+    '可用证据与不可推导',
+    '降级路径与停止条件',
+    '最小非重复组合',
+    '不设固定模型数量',
+    '不得泄露内部方法论名称、类别名、调用卡、内部评分或推演过程',
+    '不另建营销评分表'
 )) {
     if ($marketingText -notmatch [regex]::Escape($behavior)) {
         throw "营销模型参考文件缺少核心行为：$behavior"
+    }
+}
+$libraryStart = $marketingText.IndexOf('## 分类模型调用卡总库')
+$libraryEnd = $marketingText.IndexOf('## 调用组合与停止', $libraryStart)
+if ($libraryStart -lt 0 -or $libraryEnd -le $libraryStart) {
+    throw '营销模型参考文件无法定位唯一分类模型调用卡总库'
+}
+$marketingLibrary = $marketingText.Substring($libraryStart, $libraryEnd - $libraryStart)
+foreach ($category in @(
+    '### 1. 购买路径与内容推进',
+    '### 2. 卖点、定位、价值与定价',
+    '### 3. 消费心理与选择架构',
+    '### 4. 人群、场景、生命周期与关系',
+    '### 5. 平台、渠道与成交路由',
+    '### 6. 增长、经营、实验与复盘',
+    '### 7. 产品、创意、体验与画面转译',
+    '### 8. 品牌、行业、合规与全球化',
+    '### 9. 证据、根因、优先级与不确定性'
+)) {
+    if ($marketingLibrary -notmatch [regex]::Escape($category)) {
+        throw "分类模型调用卡总库缺少类别：$category"
+    }
+}
+foreach ($model in @('AIDA', 'FABE', 'AIPL', 'FAST', 'GROW', '人货场', 'AARRR', 'FOMO', '5Why')) {
+    if ($marketingLibrary -notmatch [regex]::Escape($model)) {
+        throw "分类模型调用卡总库缺少核心模型：$model"
+    }
+}
+foreach ($oldHeading in @(
+    '## 模型调用卡：从触发到分镜',
+    '## 模型选择规则',
+    '## 购买路径与内容推进模型',
+    '## 卖点、定位与价值表达模型',
+    '## 消费者心理与选择架构',
+    '## 人群、平台与人货场模型',
+    '## 增长、经营与复盘模型'
+)) {
+    if ($marketingText -match [regex]::Escape($oldHeading)) {
+        throw "营销模型参考文件仍保留分散章节：$oldHeading"
     }
 }
 
@@ -417,7 +451,7 @@ if (Test-Path -LiteralPath $repositoryReadme -PathType Leaf) {
         '## 单参考图与多参考图',
         '## 图型能力库：从买家问题出发',
         '## 子智能体与自我学习',
-        '## 营销模型如何帮助 AI 更快构建分镜',
+        '## 分类模型调用卡总库：使用教程',
         '## 最终分镜提示词示例',
         '## 常见问题',
         '### 成品、分镜和生图数量有什么区别？',
