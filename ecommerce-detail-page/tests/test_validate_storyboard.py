@@ -647,11 +647,33 @@ class StoryboardValidatorTests(unittest.TestCase):
     def test_numbered_product_identifiers_are_allowed_in_layout_context(self) -> None:
         # 型号可能出现在布局或场景描述中，不能因为与营销缩写重名就误拒；
         # 但“FAST-200模型/策略”仍属于内部方法语境，由既有规则拦截。
-        frame = make_frame(1, "主图-01").replace(
-            "- 画布与布局：【商品居中，占画面一半，右侧保留短文案安全区】",
-            "- 画布与布局：【FAST-200扫地机居中，占画面一半，右侧保留短文案安全区】",
+        safe_phrases = (
+            "FAST-200扫地机居中",
+            "展示FAST-200蓝牙耳机作为视觉锚点",
+            "呈现FAST-200蓝牙耳机作为主体",
+            "保持FAST-200蓝牙耳机作为唯一焦点",
+            "让FAST-200蓝牙耳机成为视觉中心",
+            "使用FAST-200蓝牙耳机进行展示",
+            "FAST-200蓝牙耳机作为主体居中",
+            "FAST-200蓝牙耳机作为视觉锚点居中",
+            "FAST-200传感器作为唯一焦点",
+            "FAST–200扫地机居中",
+            "RICE50电饭煲居中",
+            "AIDA2025电饭煲作为唯一焦点",
+            "GROW–200电饭煲成为视觉中心",
+            "采用FAST-200扫地机作为主体居中",
+            "运用FAST-200扫地机作为主体居中",
+            "采用AIDA Pro蓝牙耳机作为唯一焦点",
+            "参考FAST-200蓝牙耳机真实外观",
+            "商品型号：AIDA-2025蓝牙耳机",
         )
-        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+        for phrase in safe_phrases:
+            with self.subTest(phrase=phrase):
+                frame = make_frame(1, "主图-01").replace(
+                    "- 画布与布局：【商品居中，占画面一半，右侧保留短文案安全区】",
+                    f"- 画布与布局：【{phrase}，占画面一半，右侧保留短文案安全区】",
+                )
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
 
         unsafe = make_frame(1, "主图-01").replace(
             "- 画布与布局：【商品居中，占画面一半，右侧保留短文案安全区】",
@@ -659,6 +681,41 @@ class StoryboardValidatorTests(unittest.TestCase):
         )
         with self.assertRaises(StoryboardValidationError):
             validate_storyboard(make_storyboard([unsafe]))
+
+        unsafe_phrases = (
+            "依据FOMO-2025蓝牙产品组织画面",
+            "依据FOMO-2025蓝牙耳机组织画面",
+            "依据AIDA Pro蓝牙耳机组织画面",
+            "采用RACE-2024智能设备安排内容",
+            "基于FOMO Pro收纳盒作为视觉锚点",
+            "基于RACE-2025传感器作为视觉锚点",
+            "使用AIDA-2025蓝牙耳机构建视觉",
+            "参考AIDA-2025蓝牙耳机设计画面",
+            "以AIDA-2025蓝牙产品展示画面",
+            "FAST-200模型扫地机作为视觉锚点居中",
+            "FOMO-2025策略产品作为主体居中",
+            "AIDA-2025框架耳机作为唯一焦点",
+            "AIPL-2025营销产品作为主体居中",
+            "GROW-2025增长设备作为视觉锚点",
+            "FOMO-2025心理产品成为视觉中心",
+            "FAST-200扫地机策略作为主体",
+            "FAST-200扫地机模型居中",
+            "AIDA Pro蓝牙耳机框架作为唯一焦点",
+            "采用FOMO2025强化紧迫感",
+            "商品型号：X. 基于RACE-2025传感器作为视觉锚点",
+            "RICE50模型电饭煲作为主体",
+            "RICE50电饭煲策略作为唯一焦点",
+            "AIDA2025电饭煲组织画面居中",
+            "AIDA2025组织画面产品居中",
+        )
+        for phrase in unsafe_phrases:
+            with self.subTest(phrase=phrase):
+                candidate = make_frame(1, "主图-01").replace(
+                    "- 画布与布局：【商品居中，占画面一半，右侧保留短文案安全区】",
+                    f"- 画布与布局：【{phrase}，商品居中，占画面一半】",
+                )
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([candidate]))
 
     def test_printing_and_product_mode_terms_named_like_models_are_allowed(self) -> None:
         domain_phrases = (

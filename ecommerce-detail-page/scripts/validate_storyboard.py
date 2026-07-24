@@ -397,7 +397,7 @@ FORBIDDEN_REASONING_RECORD_RE = re.compile(
     r"为什么选这版|为什么选择这版|候选排序|取舍表|分析摘要|审稿记录)"
 )
 FORBIDDEN_MARKETING_MODEL_RE = re.compile(
-    r"(?i)(?<![A-Za-z0-9])(?:FABE?|AIDMA|AIDA|AISAS|ACCA|DAGMAR|PASTOR|PAS|BAB|QUEST|CDJ|"
+    r"(?i)(?<![A-Za-z])(?:FABE?|AIDMA|AIDA|AISAS|ACCA|DAGMAR|PASTOR|PAS|BAB|QUEST|CDJ|"
     r"AIPL|FAST|GROW|AARRR|RACE|RFMTC|RFM|CLV|LTV|NPS|OODA|CRO|ICE|RICE|PIE|"
     r"USP|RTB|JTBD|KANO|MECE|STP|PEST|SWOT|BCG|ANSOFF|FOMO|MEDDIC|SPIN|"
     r"ELM|FOGG|4U|4C|4P|4E|7P|3C|4A|5A|O-?5A|STDC|NSM|5WHY|OST|TRIZ|PDCA|CAGE|EPRG|CBBE|KFS|GPM|"
@@ -431,7 +431,7 @@ FORBIDDEN_MARKETING_MODEL_RE = re.compile(
     r"主图CTR|详情页转化信息序|价格带卡位|SKU精简|长尾平衡|素材工厂|计划[—–-]单元[—–-]创意|"
     r"单品[—–-]爆品[—–-]品类[—–-]品牌成长|广告法宣传合规|平台责任|产品合规认证路径|内容本地化|"
     r"转化视觉技法库|认知反差|隐性问题可视化|感官转译|场景穿透|顾虑兜底|"
-    r"公域[—–-]私域[—–-]品牌域|危机沟通3T)(?![A-Za-z0-9])"
+    r"公域[—–-]私域[—–-]品牌域|危机沟通3T)(?![A-Za-z])"
 )
 SPLITTABLE_MARKETING_ACRONYMS = (
     "FABE", "FAB", "AIDMA", "AIDA", "AISAS", "ACCA", "DAGMAR", "PASTOR", "PAS", "BAB",
@@ -444,12 +444,15 @@ SPLITTABLE_MARKETING_ACRONYMS = (
     "4A", "4U", "4C", "4P", "4E", "7P", "3C",
 )
 FORBIDDEN_SPLIT_MARKETING_MODEL_RE = re.compile(
-    r"(?i)(?<![A-Za-z0-9])(?:"
+    r"(?i)(?<![A-Za-z])(?:"
     + "|".join(
         r"[\s.·•_/-]*".join(re.escape(character) for character in acronym)
         for acronym in sorted(SPLITTABLE_MARKETING_ACRONYMS, key=len, reverse=True)
     )
-    + r")(?![A-Za-z0-9])"
+    + r")(?![A-Za-z])"
+)
+MARKETING_CLAUSE_BOUNDARY_RE = re.compile(
+    r"[，。；,;！？!?]|\.(?=(?:\s+|$|依据|基于|按照|采用|运用|借助|依照|套用|调用|参照|依托|援引|参考|应用|依靠|借用|通过|内部|幕后|后台))"
 )
 MARKETING_IDENTITY_CUE_RE = re.compile(
     r"(?:商品(?:名称|名|身份|锁定|型号)|产品(?:名称|名|身份|锁定|型号)|"
@@ -465,6 +468,9 @@ MARKETING_INTERNAL_CUE_RE = re.compile(
 MARKETING_INTERNAL_SUFFIX_RE = re.compile(
     r"(?:模型|框架|阶段|策略|红队|法则|定律|理论|矩阵|漏斗|循环|路径|推演)"
 )
+MARKETING_ENTITY_INTERNAL_TOKEN_RE = re.compile(
+    r"(?:营销|消费者|心理|增长|转化|购买|模型|框架|阶段|策略|红队|法则|定律|理论|矩阵|漏斗|循环|路径|推演)"
+)
 MARKETING_IDENTITY_SUFFIX_RE = re.compile(
     r"^(?:品牌|系列|产品|商品|型号|款号|货号|版本|SKU|"
     r"认证|标准|证书|材质|成分|规格|参数|功能|权益|服务)(?!模型)",
@@ -474,18 +480,36 @@ MARKETING_STRONG_PRODUCT_PREFIX_RE = re.compile(
     r"(?:目标(?:商品|产品)(?:为|是)|锁定)\s*$"
 )
 MARKETING_PRODUCT_VISUAL_SUFFIX_RE = re.compile(
-    r"^\s*(?:[-_/ ]?[A-Za-z0-9][A-Za-z0-9._/+ -]{0,20})?"
+    r"^\s*(?:[-‐‑‒–—―−_/+ ]?[A-Za-z0-9][A-Za-z0-9._/+ ‐‑‒–—―−-]{0,20})?"
     r"[\u3400-\u9fff]{1,32}(?:外观|轮廓|结构|比例|颜色|材质|包装|界面|主体|细节|"
     r"耳机|扫地机|传感器|显示器|相机|手机|线束|仪表|灯具|杯子|水杯|箱|盒|工具|"
-    r"模式|置于|放置|摆放|居中|占据|佩戴|手持|展示|陈列|使用)"
+    r"模式|置于|放置|摆放|居中|占据|佩戴|手持|展示|陈列|使用|唯一焦点|视觉锚点|视觉中心|焦点)"
 )
-# 真实商品型号常把营销缩写与数字连在一起（例如“FAST-200扫地机”）。
-# 这类身份可能出现在布局、场景或画面字段，而不一定紧跟“商品名称/型号”
-# 标签；只在后面出现明确实体名词、且没有模型/策略等内部后缀时放行。
-MARKETING_PRODUCT_NUMBER_SUFFIX_RE = re.compile(
-    r"^\s*[-_/ ]?\d[A-Za-z0-9._/+ -]{0,20}\s*"
-    r"[\u3400-\u9fff]{1,24}(?:商品|产品|设备|机器|耳机|扫地机|传感器|显示器|"
+# 真实商品身份可能把营销缩写与数字或型号词连在一起（例如
+# “FAST-200扫地机”“AIDA Pro蓝牙耳机”）。这类身份可能出现在布局、
+# 场景或画面字段，而不一定紧跟“商品名称/型号”标签。
+MARKETING_PRODUCT_ENTITY_SUFFIX_RE = re.compile(
+    r"^\s*(?:[-‐‑‒–—―−_/+ ]?[A-Za-z0-9][A-Za-z0-9._/+ ‐‑‒–—―−-]{0,20})?\s*"
+    r"[\u3400-\u9fff]{0,24}(?:商品|产品|设备|机器|耳机|扫地机|传感器|显示器|"
     r"相机|手机|线束|接口|仪表|灯具|杯子|水杯|箱|盒|工具|家具|服装|包装)"
+)
+MARKETING_PRODUCT_STRONG_METHOD_PREFIX_RE = re.compile(
+    r"(?:依据|基于|按照|借助|依照|套用|调用|参照|依托|援引|参考|应用|依靠|借用|通过)\s*$"
+)
+MARKETING_PRODUCT_CREATION_CONTEXT_RE = re.compile(
+    r"(?:组织|安排|推演|分析|编排|规划|构图|强化|指导|构建|构设|创建|打造|生成|设计|制作|决定|支撑|展示|呈现|显示)"
+    r"[^，。；\n]{0,12}(?:画面|内容|卖点|构图|视觉|布局|主图|分镜|紧迫感|转化|购买|行动)"
+)
+MARKETING_PRODUCT_VISUAL_CONTEXT_RE = re.compile(
+    r"(?:外观|轮廓|结构|比例|颜色|材质|包装|界面|细节|"
+    r"置于|放置|摆放|居中|占据|佩戴|手持|展示|陈列|使用|"
+    r"作为(?:主体|唯一焦点|视觉锚点)|成为(?:主体|唯一焦点|视觉中心|焦点)|进行展示)"
+)
+MARKETING_PRODUCT_FACT_TAIL_RE = re.compile(
+    r"^\s*(?:的)?(?:真实)?(?:外观|轮廓|结构|比例|颜色|材质|包装|界面|细节|文字)"
+)
+MARKETING_PRODUCT_FACT_END_RE = re.compile(
+    r"(?:真实)?(?:外观|轮廓|结构|比例|颜色|材质|包装|界面|细节|文字)\s*$"
 )
 MARKETING_PRODUCT_ACTION_PREFIX_RE = re.compile(
     r"(?:展示|呈现|显示|保持|还原|放置|摆放|启用|切换至|锁定)\s*$"
@@ -1309,12 +1333,12 @@ def _contains_forbidden_marketing_model(text: str) -> bool:
         # 品牌、型号、SKU、包装原文等是商品身份字段；其中出现同名
         # 缩写时应保留真实身份，不能被当作内部营销模型。若同一短句
         # 在身份字段后又出现“采用/模型/策略”等内部语境，仍继续拦截。
-        clause_start = max(text.rfind(separator, 0, match.start()) for separator in "，。；\n") + 1
-        clause_end_positions = [text.find(separator, match.end()) for separator in "，。；\n"]
-        clause_end = min(
-            (position for position in clause_end_positions if position >= 0),
-            default=len(text),
+        preceding_boundaries = list(
+            MARKETING_CLAUSE_BOUNDARY_RE.finditer(text, 0, match.start())
         )
+        clause_start = preceding_boundaries[-1].end() if preceding_boundaries else 0
+        following_boundary = MARKETING_CLAUSE_BOUNDARY_RE.search(text, match.end())
+        clause_end = following_boundary.start() if following_boundary else len(text)
         clause = text[clause_start:clause_end]
         relative_start = match.start() - clause_start
         relative_end = match.end() - clause_start
@@ -1323,7 +1347,8 @@ def _contains_forbidden_marketing_model(text: str) -> bool:
         compact_token = re.sub(r"[\s.·•_/-]+", "", match.group()).casefold()
 
         # 少量与营销缩写同名、但有明确行业语义的术语只在窄范围放行。
-        # 一旦同一短句又出现模型/框架/策略等内部语境，仍按泄露处理。
+        # 专项语义必须先于通用商品实体解析，避免“4C印刷…包装”等短句
+        # 被误吞成商品名称；一旦出现模型/框架/策略后缀，仍继续拦截。
         if (
             compact_token == "4c"
             and re.match(r"^\s*(?:印刷|胶印|四色(?:印刷|胶印|色彩)?|色彩印刷)", suffix)
@@ -1343,13 +1368,69 @@ def _contains_forbidden_marketing_model(text: str) -> bool:
         ):
             continue
 
-        suffix_has_internal_context = MARKETING_INTERNAL_SUFFIX_RE.search(suffix) is not None
-        if (
-            not suffix_has_internal_context
-            and MARKETING_PRODUCT_NUMBER_SUFFIX_RE.match(suffix) is not None
-        ):
-            continue
+        product_entity_match = MARKETING_PRODUCT_ENTITY_SUFFIX_RE.match(suffix)
+        product_visual_match = MARKETING_PRODUCT_VISUAL_SUFFIX_RE.match(suffix)
         identity_cues = list(MARKETING_IDENTITY_CUE_RE.finditer(prefix))
+        if product_entity_match is not None:
+            if (
+                MARKETING_ENTITY_INTERNAL_TOKEN_RE.search(product_entity_match.group())
+                or MARKETING_PRODUCT_CREATION_CONTEXT_RE.search(product_entity_match.group())
+            ):
+                return True
+            suffix_after_product = suffix[product_entity_match.end() :]
+            if MARKETING_ENTITY_INTERNAL_TOKEN_RE.search(suffix_after_product):
+                return True
+            has_identity_context = bool(
+                identity_cues or MARKETING_STRONG_PRODUCT_PREFIX_RE.search(prefix)
+            )
+            has_visual_context = bool(
+                MARKETING_PRODUCT_ACTION_PREFIX_RE.search(prefix)
+                or MARKETING_PRODUCT_VISUAL_CONTEXT_RE.search(suffix_after_product)
+            )
+            has_product_fact_context = bool(
+                MARKETING_PRODUCT_FACT_TAIL_RE.search(suffix_after_product)
+            )
+            has_creation_context = bool(
+                MARKETING_PRODUCT_CREATION_CONTEXT_RE.search(suffix_after_product)
+            )
+            has_strong_method_prefix = bool(
+                MARKETING_PRODUCT_STRONG_METHOD_PREFIX_RE.search(prefix)
+            )
+            # 先按句法职责区分真实商品身份与内部方法：身份字段、商品事实和
+            # 明确的展示/布局动作可以保留；“方法前缀 + 商品串”或商品串后
+            # 继续组织、设计、生成画面时按内部方法拦截。这样既不误伤“作为
+            # 主体”等自然视觉表达，也不能用型号尾缀伪装营销模型。
+            if has_creation_context or (
+                has_strong_method_prefix
+                and not (has_identity_context or has_product_fact_context)
+            ):
+                return True
+            if not (has_identity_context or has_product_fact_context or has_visual_context):
+                return True
+            continue
+        if product_visual_match is not None:
+            suffix_after_visual = suffix[product_visual_match.end() :]
+            if (
+                MARKETING_ENTITY_INTERNAL_TOKEN_RE.search(product_visual_match.group())
+                or MARKETING_ENTITY_INTERNAL_TOKEN_RE.search(suffix_after_visual)
+                or MARKETING_PRODUCT_CREATION_CONTEXT_RE.search(product_visual_match.group())
+                or MARKETING_PRODUCT_CREATION_CONTEXT_RE.search(suffix_after_visual)
+            ):
+                return True
+            has_identity_context = bool(
+                identity_cues or MARKETING_STRONG_PRODUCT_PREFIX_RE.search(prefix)
+            )
+            has_product_fact_context = bool(
+                MARKETING_PRODUCT_FACT_END_RE.search(product_visual_match.group())
+            )
+            if (
+                MARKETING_PRODUCT_STRONG_METHOD_PREFIX_RE.search(prefix)
+                and not (has_identity_context or has_product_fact_context)
+            ):
+                return True
+            continue
+
+        suffix_has_internal_context = MARKETING_INTERNAL_SUFFIX_RE.search(suffix) is not None
         if identity_cues:
             last_identity = identity_cues[-1]
             explicit_product_identity = re.fullmatch(
