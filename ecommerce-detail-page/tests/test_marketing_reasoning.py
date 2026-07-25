@@ -624,15 +624,18 @@ class MarketingReasoningContentTests(unittest.TestCase):
             "逐图确认/内部自动复核 → 最终分镜 → 可选生图与结果反馈"
         )
         self.assertIn(expected_flow, self.skill_text)
-        light_call = self.skill_text.index("可轻量读取 [marketing-reasoning.md]")
+        light_call = self.skill_text.index("执行`AI预构建`阶段路由")
         formal_call = self.skill_text.index("在商品卡确认且首要目标已明确后")
         output_scope = self.skill_text.index("### 6. 需求预判与输出范围")
         self.assertLess(light_call, formal_call)
         self.assertLess(formal_call, output_scope)
         routed = self.skill_text[formal_call:output_scope]
-        self.assertIn("分类模型调用卡总库", routed)
+        self.assertIn("`模型_…`类别特征", routed)
         self.assertIn("不改变主流程", routed)
+        self.assertIn("不设固定模型数量", routed)
         self.assertNotIn("最多两个辅助检查", routed)
+        self.assertIn("config/context-routing.json", self.skill_text)
+        self.assertIn("scripts/route_context.py", self.skill_text)
 
     def test_readme_is_a_tutorial_not_a_second_model_catalog(self) -> None:
         self.assertIn("## 分类模型调用卡总库：使用教程", self.readme_text)

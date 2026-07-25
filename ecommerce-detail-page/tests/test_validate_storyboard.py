@@ -34,7 +34,7 @@ def make_frame(
     return f"""## 第{page}张（{storyboard_id}）：商品识别
 - 输出对象：【主图】
 - 成图任务：【清楚建立商品识别】
-- 画布与布局：【商品居中，占画面一半，右侧保留短文案安全区】
+- 画布与布局：【商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界】
 - 参考图使用：【{reference_usage}】
 - 商品锁定：【保持轮廓、结构、比例、颜色与可见原文】
 - 允许变化：【只改变背景、光影与留白】
@@ -60,6 +60,1196 @@ def make_storyboard(frames: list[str], quantity_note: str | None = None) -> str:
 
 
 class StoryboardValidatorTests(unittest.TestCase):
+    def test_runtime_guidance_uses_autonomous_layout_and_copy(self) -> None:
+        repository_readme = ROOT.parent / "README.md"
+        runtime_paths = [
+            repository_readme,
+            ROOT / "SKILL.md",
+            ROOT / "config" / "context-routing.json",
+            *sorted((ROOT / "references").glob("*.md")),
+            FIXTURE,
+        ]
+        runtime_text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in runtime_paths
+            if path.exists()
+        )
+        template = (ROOT / "references" / "storyboard-template.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("占画面" + "45" + "%", runtime_text)
+        self.assertNotIn("画布" + "比例", runtime_text)
+        self.assertNotIn("画布" + "尺寸", runtime_text)
+        self.assertNotIn("从输入中提取" + "画布" + "比例", runtime_text)
+        self.assertNotIn("商品仍是最大且最清楚", runtime_text)
+        self.assertNotIn("视觉层级固定为", runtime_text)
+        self.assertIn("不限制输出长宽比", runtime_text)
+        self.assertIn("参考图的宽高关系不作为输出画面约束", runtime_text)
+        self.assertIn("系统根据商品特征、使用场景、输出位置、信息层级和裁切风险自主决定", runtime_text)
+        self.assertIn("自主决定是否使用文案", runtime_text)
+        self.assertIn("`最终文案`由AI自主决定", template)
+        self.assertIn("文案原文、信息层级、位置与视觉效果", template)
+
+        template_frame = template.split("````markdown\n", 1)[1].split("\n````", 1)[0]
+        fixture_text = FIXTURE.read_text(encoding="utf-8")
+        readme = repository_readme.read_text(encoding="utf-8")
+        readme_example = readme.split("## 最终分镜提示词示例", 1)[1].split(
+            "## 返修方法", 1
+        )[0]
+        for public_example in (template_frame, fixture_text, readme_example):
+            with self.subTest(example=public_example[:24]):
+                self.assertNotRegex(
+                    public_example,
+                    r"(?:系统|AI)(?:根据|依据)[^，。；\n]{0,40}自主决定",
+                )
+
+        self.assertIn("普通导航型行动文案", runtime_text)
+        self.assertIn("交易条件、权益、时效或稀缺性承诺", runtime_text)
+
+    def test_fixed_canvas_specs_are_rejected_from_every_public_nonproduction_field(self) -> None:
+        baseline = {
+            "成图任务": "清楚建立商品识别",
+            "参考图使用": (
+                "已分析全部有效参考视觉；本张实际向生成模型提供全部同款参考图，"
+                "按目标SKU/状态筛选共同商品特征，其他SKU不作为生成参考输入，"
+                "同款资料一致，无需裁决"
+            ),
+            "商品锁定": "保持轮廓、结构、比例、颜色与可见原文",
+            "允许变化": "只改变背景、光影与留白",
+            "视角与事实边界": "不补画未知背面、内部或配件",
+            "光影、材质与色彩": "柔和侧光，保留真实颜色、反射和接触阴影",
+        }
+        cases = {
+            "成图任务": "清楚建立商品识别，成图固定为3:4",
+            "参考图使用": baseline["参考图使用"] + "；当前输出固定为3:4",
+            "商品锁定": "保持商品真实，当前画面固定为3:4",
+            "允许变化": "背景可变化，但固定成图比例3:4",
+            "视角与事实边界": "不补画未知结构，输出画幅锁定为3:4",
+            "光影、材质与色彩": "柔和侧光，最终图片固定为3:4",
+        }
+
+        for field_name, value in cases.items():
+            with self.subTest(field=field_name):
+                frame = make_frame(1, "主图-01").replace(
+                    f"- {field_name}：【{baseline[field_name]}】",
+                    f"- {field_name}：【{value}】",
+                )
+                with self.assertRaisesRegex(
+                    StoryboardValidationError,
+                    field_name,
+                ):
+                    validate_storyboard(make_storyboard([frame]))
+
+        optional_cases = {
+            "场景与人物": "人物站在商品旁，成图固定为3:4",
+            "最终文案": "查看详情；当前画面固定为3:4",
+        }
+        anchor = "- 光影、材质与色彩：【柔和侧光，保留真实颜色、反射和接触阴影】"
+        for field_name, value in optional_cases.items():
+            with self.subTest(field=field_name):
+                frame = make_frame(1, "主图-01").replace(
+                    anchor,
+                    f"{anchor}\n- {field_name}：【{value}】",
+                )
+                with self.assertRaisesRegex(
+                    StoryboardValidationError,
+                    field_name,
+                ):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_product_facts_cannot_be_rebound_as_output_canvas_constraints(self) -> None:
+        layout = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        rejected = (
+            "产品图案宽高为5:7，画布沿用该比例",
+            "包装图案尺寸为1080×1440像素，画布采用该尺寸",
+            "商品本体是横版，所以成图保持同一方向",
+            "商品本体规格为A4，输出采用相同规格",
+            "产品图案宽高为5:7，画布并非不沿用该比例",
+        )
+        allowed = (
+            "产品图案宽高为5:7，画布按内容自适应",
+            "包装图案尺寸为1080×1440像素，画面根据任务自主组织",
+            "商品本体是横版，成图方向由使用场景和信息动线决定",
+            "商品本体规格为A4，输出构图按内容自适应",
+            "产品图案宽高为5:7，画布不沿用该比例，按内容自适应",
+            "产品图案宽高为5:7，画布采用与该比例无关的自适应布局",
+            "包装图案尺寸为1080×1440像素，画布采用不同于该尺寸的布局",
+        )
+
+        for phrase in rejected:
+            with self.subTest(result="reject", phrase=phrase):
+                frame = make_frame(1, "主图-01").replace(layout, phrase)
+                with self.assertRaises(StoryboardValidationError):
+                    validate_storyboard(make_storyboard([frame]))
+
+        for phrase in allowed:
+            with self.subTest(result="allow", phrase=phrase):
+                frame = make_frame(1, "主图-01").replace(layout, phrase)
+                self.assertEqual(
+                    ["主图-01"],
+                    validate_storyboard(make_storyboard([frame])),
+                )
+
+    def test_product_physical_facts_remain_allowed_in_noncomposition_fields(self) -> None:
+        product_facts = (
+            "零售彩盒的物理尺寸为二十六乘九乘九厘米",
+            "灯板实体排列为六十四乘三十二颗发光像素",
+            "商品自身长边是短边的一点六倍，此为实物轮廓事实",
+        )
+        baseline = "保持轮廓、结构、比例、颜色与可见原文"
+
+        for product_fact in product_facts:
+            with self.subTest(product_fact=product_fact):
+                frame = make_frame(1, "主图-01").replace(
+                    f"- 商品锁定：【{baseline}】",
+                    f"- 商品锁定：【{product_fact}；{baseline}】",
+                )
+                self.assertEqual(
+                    ["主图-01"],
+                    validate_storyboard(make_storyboard([frame])),
+                )
+
+    def test_fixed_canvas_specs_are_rejected_from_composition_fields(self) -> None:
+        cases = {
+            "layout_numeric_aspect_ratio": (
+                "画布与布局",
+                "竖版3:4，商品居中并保留右侧留白",
+            ),
+            "layout_fullwidth_aspect_ratio": (
+                "画布与布局",
+                "竖版３：４，商品居中并保留右侧留白",
+            ),
+            "layout_slash_aspect_ratio": (
+                "画布与布局",
+                "竖版3/4，商品居中并保留右侧留白",
+            ),
+            "layout_chinese_aspect_ratio": (
+                "画布与布局",
+                "竖版三比四，商品居中并保留右侧留白",
+            ),
+            "layout_chinese_colon_aspect_ratio": (
+                "画布与布局",
+                "竖版四：五，商品居中并保留右侧留白",
+            ),
+            "layout_multiplication_aspect_ratio": (
+                "画布与布局",
+                "采用4×5画幅，商品居中并保留右侧留白",
+            ),
+            "layout_scalar_aspect_ratio": (
+                "画布与布局",
+                "成图宽高比为0.8，商品居中并保留右侧留白",
+            ),
+            "layout_pixel_dimensions": (
+                "画布与布局",
+                "输出1080×1440像素，商品居中并保留右侧留白",
+            ),
+            "layout_bare_separate_pixel_dimensions": (
+                "画布与布局",
+                "宽1080px，高1440px，商品居中并保留右侧留白",
+            ),
+            "layout_multiply_pixel_dimensions": (
+                "画布与布局",
+                "成图尺寸1080乘1440像素，商品居中并保留右侧留白",
+            ),
+            "layout_physical_canvas_dimensions": (
+                "画布与布局",
+                "画布300×400毫米，商品居中并保留右侧留白",
+            ),
+            "layout_screen_fit_cannot_hide_output_pixels": (
+                "画布与布局",
+                "成图1920×1080像素适配屏幕，商品居中并保留右侧留白",
+            ),
+            "layout_product_pixel_size_is_not_product_geometry": (
+                "画布与布局",
+                "商品宽1080px，高1440px，右侧保留短文案区",
+            ),
+            "final_image_subject_percentage": (
+                "最终画面",
+                "单个商品占画面37%，右侧保留短文案区",
+            ),
+            "composition_fullwidth_subject_percentage": (
+                "镜头与构图",
+                "平视中景，商品占画面６２％，焦点落在正面",
+            ),
+            "layout_half_occupancy": (
+                "画布与布局",
+                "商品占画面一半，右侧保留短文案区",
+            ),
+            "layout_chinese_percentage": (
+                "画布与布局",
+                "商品占画面百分之四十五，右侧保留短文案区",
+            ),
+            "layout_chinese_fraction": (
+                "画布与布局",
+                "商品占画面三分之二，右侧保留短文案区",
+            ),
+            "layout_chinese_tenths": (
+                "画布与布局",
+                "主体约占四成版面，右侧保留短文案区",
+            ),
+            "layout_height_percentage": (
+                "画布与布局",
+                "主体高度为画面高度的45%，右侧保留短文案区",
+            ),
+            "layout_inherits_reference_frame": (
+                "画布与布局",
+                "沿用参考图外框和宽高关系组织输出画面",
+            ),
+            "layout_follows_reference_ratio": (
+                "画布与布局",
+                "输出比例跟随参考图，商品居中并保留右侧留白",
+            ),
+            "layout_uses_reference_dimensions": (
+                "画布与布局",
+                "按参考图宽高关系组织成图，商品居中并保留右侧留白",
+            ),
+            "layout_treats_reference_as_constraint": (
+                "画布与布局",
+                "参考图宽高关系作为输出画面约束",
+            ),
+            "layout_keeps_same_reference_ratio": (
+                "画布与布局",
+                "成图保持与参考图相同的宽高比",
+            ),
+            "layout_ratio_comes_from_reference": (
+                "画布与布局",
+                "输出宽高比取自参考图",
+            ),
+            "layout_matches_reference_ratio": (
+                "画布与布局",
+                "匹配参考图比例生成成图",
+            ),
+            "layout_ratio_based_on_reference": (
+                "画布与布局",
+                "根据参考图比例生成成图",
+            ),
+            "layout_ratio_equals_reference": (
+                "画布与布局",
+                "成图比例和参考图一致",
+            ),
+            "layout_keeps_original_ratio": (
+                "画布与布局",
+                "成图维持原图比例",
+            ),
+            "layout_ratio_equals_original_ratio": (
+                "画布与布局",
+                "成图比例等于原图比例",
+            ),
+            "layout_uses_reference_visual_ratio": (
+                "画布与布局",
+                "按参考视觉比例生成成图",
+            ),
+            "layout_positive_inheritance_after_negated_inheritance": (
+                "画布与布局",
+                "不沿用参考图外框而根据参考图比例生成成图",
+            ),
+        }
+
+        original_values = {
+            "画布与布局": "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界",
+            "最终画面": "单个商品稳定放置并成为唯一焦点",
+            "镜头与构图": "平视中景，自然透视，焦点落在商品正面",
+        }
+        for name, (field_name, replacement) in cases.items():
+            with self.subTest(name=name):
+                frame = make_frame(1, "主图-01").replace(
+                    original_values[field_name],
+                    replacement,
+                )
+                with self.assertRaisesRegex(StoryboardValidationError, "固定画幅"):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_fixed_canvas_specs_are_rejected_from_positive_prompt(self) -> None:
+        replacements = {
+            "aspect_ratio": "生成横版16:9画面，只生成简洁背景",
+            "natural_aspect_ratio": "采用3:4比例组织留白，只生成简洁背景",
+            "pixel_dimensions": "输出1080×1440像素成图，只生成简洁背景",
+            "separate_pixel_dimensions": "输出宽1080像素、高1440像素，只生成简洁背景",
+            "bare_separate_pixel_dimensions": "宽1080px，高1440px的输出画面，只生成简洁背景",
+            "multiply_pixel_dimensions": "成图尺寸1080乘1440像素，只生成简洁背景",
+            "english_by_pixel_dimensions": "输出1080 by 1440像素高清图，只生成简洁背景",
+            "subject_percentage": "商品占画面45%，只生成简洁背景",
+            "subject_fraction": "商品占画面2/3，只生成简洁背景",
+            "reference_frame_inheritance": "沿用参考图外框和宽高关系组织输出画面，只生成简洁背景",
+            "reference_same_ratio": "成图保持与参考图相同的宽高比，只生成简洁背景",
+            "reference_ratio_source": "输出宽高比取自参考图，只生成简洁背景",
+            "reference_ratio_match": "匹配参考图比例生成成图，只生成简洁背景",
+            "reference_ratio_basis": "根据参考图比例生成成图，只生成简洁背景",
+            "plain_ratio_generation": "使用3:4比例生成主图，只生成简洁背景",
+            "plain_ratio_output": "按3:4出图，只生成简洁背景",
+            "plain_pixel_image": "制作1080×1440像素图片，只生成简洁背景",
+            "plain_pixel_export": "请按1080×1440导出，只生成简洁背景",
+        }
+
+        for name, replacement in replacements.items():
+            with self.subTest(name=name):
+                frame = make_frame(1, "主图-01").replace(
+                    "只生成简洁背景",
+                    replacement,
+                )
+                with self.assertRaisesRegex(StoryboardValidationError, "固定画幅"):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_unquantified_output_frame_locks_and_output_subject_share_are_rejected(self) -> None:
+        cases = {
+            "task_frame_must_not_change": (
+                "成图任务",
+                "清楚建立商品识别",
+                "画幅不得改变",
+            ),
+            "task_output_ratio_must_not_be_autonomous": (
+                "成图任务",
+                "清楚建立商品识别",
+                "输出比例不得自主决定",
+            ),
+            "task_output_frame_cannot_be_system_selected": (
+                "成图任务",
+                "清楚建立商品识别",
+                "输出画幅不能由系统自主决定",
+            ),
+            "task_output_ratio_is_user_selected": (
+                "成图任务",
+                "清楚建立商品识别",
+                "输出比例由用户决定",
+            ),
+            "layout_output_frame_keeps_original": (
+                "画布与布局",
+                "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界",
+                "最终画面必须保持原样",
+            ),
+            "layout_output_frame_keeps_unchanged": (
+                "画布与布局",
+                "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界",
+                "画幅保持不变",
+            ),
+            "layout_subject_share_of_output_frame": (
+                "画布与布局",
+                "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界",
+                "核心主体占输出画面一半",
+            ),
+            "layout_subject_share_with_output_frame_area": (
+                "画布与布局",
+                "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界",
+                "核心主体占输出画面面积的一半",
+            ),
+        }
+
+        for name, (field_name, original, replacement) in cases.items():
+            with self.subTest(name=name):
+                frame = make_frame(1, "主图-01").replace(
+                    f"- {field_name}：【{original}】",
+                    f"- {field_name}：【{replacement}】",
+                )
+                with self.assertRaisesRegex(StoryboardValidationError, "固定画幅"):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_unquantified_canvas_phrase_can_remain_visible_copy(self) -> None:
+        anchor = "- 光影、材质与色彩：【柔和侧光，保留真实颜色、反射和接触阴影】"
+        frame = make_frame(1, "主图-01").replace(
+            anchor,
+            f"{anchor}\n- 最终文案：【输出比例不得自主决定】",
+        )
+        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_product_fact_preservation_is_not_an_output_frame_lock(self) -> None:
+        original = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        frame = make_frame(1, "主图-01").replace(
+            original,
+            "画幅不得改变商品自身比例，构图由系统根据商品特征自主决定",
+        )
+        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_explicit_platform_dimensions_are_allowed_only_in_production_field(self) -> None:
+        frame = make_frame(1, "主图-01").replace(
+            "模型生成背景与光影，真实商品层和文字由后期复核",
+            "用户已明确要求平台交付竖版3:4、1080×1440像素；模型生成背景与光影，真实商品层和文字由后期复核",
+        )
+
+        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_natural_fixed_output_dimensions_are_rejected(self) -> None:
+        layouts = (
+            "成图宽高比设成0.75",
+            "成图比例控制在0.8",
+            "出图比例控制在0.8",
+            "成图长宽比为0.8",
+            "海报比例3:4，商品居中",
+            "详情页比例3:4，商品居中",
+            "SKU图比例1:1，商品居中",
+            "整体版面比例4:5，商品居中",
+            "页面长宽比3:4，商品居中",
+            "导出比例3:4，商品居中",
+            "最终版面比例3:4，商品居中",
+            "成图采用九比十六的纵向比例",
+            "成图长边1600像素、短边1200像素",
+            "成图长边1440像素、短边1080像素",
+            "画布宽是1080像素，高是1440像素",
+            "尺寸为1080像素宽、1440像素高",
+            "输出尺寸为1080像素宽、1440像素高",
+            "输出分辨率为1080*1440",
+            "输出尺寸设成1200像素乘1600像素",
+            "导出1080像素×1440像素",
+            "主图尺寸是宽1080、长1440像素",
+            "画面控制为1080像素乘以1440像素",
+            "最终图片宽度必须是1200像素",
+            "画面尺寸固定为30厘米宽、40厘米高",
+            "画布定为640像素宽、960像素长",
+            "主图高是宽的1.5倍",
+            "图片的比例锁死在0.8",
+            "产品高度等于画布高度的0.6倍",
+            "海报尺寸300×400毫米",
+            "输出宽度固定为1080像素",
+            "成图高度1440px",
+            "画布宽1080像素",
+            "导出高度为1440像素",
+            "主图宽度设为1200px",
+            "图片高度控制在1600像素",
+            "分辨率宽1080像素",
+        )
+        original = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        for layout in layouts:
+            with self.subTest(layout=layout):
+                frame = make_frame(1, "主图-01").replace(original, layout)
+                with self.assertRaisesRegex(StoryboardValidationError, "固定画幅"):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_reference_frame_inheritance_synonyms_are_rejected(self) -> None:
+        layouts = (
+            "让成图与原图保持同样比例",
+            "复刻参考图的版式比例",
+            "成图比例与输入图同步",
+            "照着原图来",
+            "复制参考图画幅",
+            "依原图比例排版",
+            "成图比例由原图决定",
+            "画面宽高取决于参考图",
+            "参照原图确定画幅",
+            "以原图为准确定画幅",
+            "输出比例以参考图为准",
+            "根据原图确定成图比例",
+            "成图沿袭参考图外框",
+            "不改变商品结构并按参考图比例生成成图",
+            "不补画未知背面并沿用参考图外框",
+            "不要更改商品且成图保持与参考图相同的宽高比",
+            "不改变颜色并输出宽高比取自参考图",
+            "不要修改结构同时根据参考图比例生成成图",
+            "不复制文字以及匹配参考图比例生成成图",
+            "画幅完全复刻参考图",
+            "沿袭输入图的画面比例",
+            "成图比例照抄原图",
+            "用输入图的长宽关系为准进行构图",
+            "不沿用参考图外框，但成图仍保持同样比例",
+            "参考图外框不作为约束，不过最终画幅必须和它一样",
+            "虽然不继承参考图版式，输出仍遵循该素材的横竖关系",
+            "延续参考图的横版方向",
+            "输入图横向，成图也横向",
+            "参考图的比例直接套到输出上",
+            "把输入图版式搬到最终成图",
+            "成图照原图的画幅走",
+            "主图比例随源图变化",
+            "以参考图片外框为模板出图",
+            "构图必须保持该素材的横竖",
+            "照着输入照片的边框出图",
+            "源图什么比例就生成什么比例",
+            "复制输入影像的外轮廓比例",
+            "不要继承输入图版式，输出只需与它同宽同高",
+            "参考图比例不锁定输出；实际制作时仍照其长宽出图",
+            "参考图外框不作为约束；但成图仍保持同样比例",
+            "不沿用参考图外框。成图仍保持同样比例",
+            "原图比例仅作参考；输出仍与它一致",
+            "输入图横向。成图也横向",
+            "海报比例取自参考图",
+            "详情页比例沿用原图",
+            "SKU图比例跟随输入图",
+            "页面比例与原图一致",
+            "最终版面比例来自素材图",
+            "导出比例按原图确定",
+            "沿用参考图尺寸",
+            "参考图尺寸作为约束",
+            "保持原图分辨率",
+            "匹配输入图方向",
+            "延续素材图横版",
+            "跟随原图裁切边界",
+            "按参考图边框生成",
+            "照原图形状来",
+        )
+        original = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        for layout in layouts:
+            with self.subTest(layout=layout):
+                frame = make_frame(1, "主图-01").replace(original, layout)
+                with self.assertRaisesRegex(StoryboardValidationError, "固定画幅"):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_fixed_canvas_forms_and_relative_dimensions_are_rejected(self) -> None:
+        layouts = (
+            "画面固定为正方形画幅",
+            "请做成横版画面",
+            "按A4竖版纸张比例完成画面",
+            "输出最长边固定为2048像素",
+            "输出宽一千零八十像素、高一千四百四十像素",
+            "高度固定为宽度的一点五倍",
+            "让商品填满大约七成版面",
+        )
+        original = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        for layout in layouts:
+            with self.subTest(layout=layout):
+                frame = make_frame(1, "主图-01").replace(original, layout)
+                with self.assertRaisesRegex(StoryboardValidationError, "固定画幅"):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_adversarial_natural_canvas_constraints_are_rejected(self) -> None:
+        layouts = (
+            # 固定方向或定性外形
+            "采用手机满屏竖幅组织成图",
+            "输出图片只准使用竖构图",
+            "成片必须是方幅，不接受横竖长图",
+            "横着出图，商品居中",
+            "统一按横屏规格出图",
+            "保持横图，不要改成竖图",
+            "需要一张横构图",
+            "请给我方形版本",
+            "画面必须更宽而不是更高",
+            "成图做成长条形横幅",
+            "一律采用竖向画面",
+            "主图要横屏呈现",
+            "固定成宽图，不能竖",
+            "用竖构图交付",
+            # 数字、范围、优先或默认比例
+            "画面高为宽的四分之三",
+            "宽边必须是高边的1.2倍",
+            "宽度不得低于高度的1.5倍",
+            "横竖比例锁死，宽比高多一半",
+            "宽高关系锁为五比四",
+            "不要3:4，要4:5",
+            "高宽比至少4:5",
+            "宽高比在0.8到1.2之间",
+            "比例以9:16为优先",
+            "建议4:5，AI可自行调整",
+            "默认1:1，必要时由AI调整",
+            # 像素、K 制式和物理输出尺寸
+            "输出分辨率锁定为2K",
+            "画布做成30公分宽、40公分高",
+            "最终图片设成1.2K乘1.6K像素",
+            "成图宽度必须达到一千二百个像素点",
+            # 主体占画面比例
+            "产品铺占版面一半",
+            "商品面积控制为画面的百分之六十",
+            "让主角占住版心的2/3",
+            "主商品铺到整个画面的六成",
+            "产品可见高度达到画布的0.7倍",
+            "主角填满版面的60%",
+            "商品视觉面积固定成0.6倍画布面积",
+            "把货品压在版心五成五的区域内",
+            # 继承参考图外框、方向或长短边关系
+            "成片长宽关系照原素材来",
+            "输出外形由样图比例决定",
+            "保持原照片的画幅不变",
+            "复用参考图的长短边关系",
+            "不按参考图画幅生成，只把横竖比例照旧",
+            "画布方向听从参考素材",
+            "把源素材的长短边原样移植到成图",
+            "参考图横我也横，参考图竖我也竖",
+            "沿着来图的横竖方向出片",
+            "输入是横图就做横图，输入是竖图就做竖图",
+            "成图方向跟素材保持一模一样",
+            "按底图的横纵关系交付",
+            "原素材横屏，因此输出也横屏",
+            "参考图为竖版，沿同一方向生成",
+            # 第二轮独立压力测试补充
+            "最终交一张宽幅成品图",
+            "按照纵长画面制作成片",
+            "画面比例建议设为0.75",
+            "高边至少达到宽边的1.4倍",
+            "最终图按A4尺寸制作",
+            "按A4竖版纸张方向构图",
+            "主体占住页面七成半",
+            "留白比例固定为25%",
+            "货品宽度限制在画幅宽度的3/5",
+            "主物面积占据页面0.6",
+            "最终外框跟样片保持一致",
+            "成图沿着来稿的长短边走",
+            "输出方向听原始图片安排",
+        )
+        original = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        for layout in layouts:
+            with self.subTest(layout=layout):
+                frame = make_frame(1, "主图-01").replace(original, layout)
+                with self.assertRaisesRegex(StoryboardValidationError, "固定画幅"):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_natural_subject_occupancy_constraints_are_rejected(self) -> None:
+        layouts = (
+            "主视觉面积约为0.6",
+            "商品铺满画面六成",
+            "留白控制在四分之一",
+            "三分之二的画面交给商品",
+            "画面的七成留作商品区",
+            "商品视觉高度限定在画幅的0.7",
+            "主体占比定为55%",
+            "货品主体填充版心约百分之五十五",
+            "主体占比45%，右侧留白",
+            "商品占比设为45%，右侧留白",
+            "产品视觉占比四成，右侧留白",
+            "主物面积占比60%，右侧留白",
+            "核心视觉载体占比百分之四十，右侧留白",
+        )
+        original = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        for layout in layouts:
+            with self.subTest(layout=layout):
+                frame = make_frame(1, "主图-01").replace(original, layout)
+                with self.assertRaisesRegex(StoryboardValidationError, "固定画幅"):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_ai_selected_orientation_is_allowed(self) -> None:
+        layouts = (
+            "系统根据商品结构自主采用横版构图并安排留白",
+            "AI根据任务自主将画面做成竖版并安排留白",
+            "系统自主选择横版画面并安排留白",
+            "经系统自主判断，本张采用横版构图",
+            "横版构图，系统根据任务自主决定",
+            "系统根据商品结构自主确定为竖版构图",
+        )
+        original = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        for layout in layouts:
+            with self.subTest(layout=layout):
+                frame = make_frame(1, "主图-01").replace(original, layout)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_fixed_orientation_hard_constraints_are_rejected(self) -> None:
+        layouts = (
+            "输出只能是方图",
+            "画面必须为横版",
+            "成图限定竖版",
+            "图片方向固定横版",
+            "要求横版构图",
+            "横版是硬性要求",
+            "锁定竖版构图",
+            "务必使用横版",
+            "画幅定为竖版",
+            "保持方图输出",
+        )
+        original = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        for layout in layouts:
+            with self.subTest(layout=layout):
+                frame = make_frame(1, "主图-01").replace(original, layout)
+                with self.assertRaisesRegex(StoryboardValidationError, "固定画幅"):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_product_geometry_ratio_is_not_mistaken_for_canvas_ratio(self) -> None:
+        frame = make_frame(1, "主图-01").replace(
+            "保持轮廓、结构、比例、颜色与可见原文",
+            "保持商品自身高宽比例3:1、包装尺寸300×400毫米、显示屏原生分辨率1920×1080像素、颜色与可见原文",
+        ).replace(
+            "完整保持商品轮廓、结构、比例、颜色和可见原文",
+            "画面中完整保持商品自身高宽比例3:1、包装尺寸300×400毫米、显示屏原生分辨率1920×1080像素、颜色和可见原文",
+        )
+
+        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_product_geometry_is_allowed_inside_composition_fields(self) -> None:
+        frame = make_frame(1, "主图-01").replace(
+            "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界",
+            "依据商品自身高宽比3:1的细长结构自主安排留白与视觉动线",
+        ).replace(
+            "单个商品稳定放置并成为唯一焦点",
+            "300×400毫米包装完整放置，商品成为唯一焦点",
+        ).replace(
+            "平视中景，自然透视，焦点落在商品正面",
+            "平视中景对准显示屏原生分辨率1920×1080像素的真实内容",
+        )
+
+        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_postposed_product_geometry_labels_are_allowed(self) -> None:
+        cases = {
+            "product_ratio_label_after_value": (
+                "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界",
+                "依据原商品3:1的高宽比自主安排留白",
+            ),
+            "display_resolution_label_after_value": (
+                "平视中景，自然透视，焦点落在商品正面",
+                "平视中景对准屏幕1920×1080原生分辨率的真实内容",
+            ),
+            "display_named_after_resolution": (
+                "平视中景，自然透视，焦点落在商品正面",
+                "平视中景对准1920×1080像素的显示屏真实内容",
+            ),
+            "display_separate_output_dimensions": (
+                "平视中景，自然透视，焦点落在商品正面",
+                "平视中景对准屏幕输出宽1920像素、高1080像素的真实内容",
+            ),
+        }
+
+        for name, (original, replacement) in cases.items():
+            with self.subTest(name=name):
+                frame = make_frame(1, "主图-01").replace(original, replacement)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_natural_product_geometry_evidence_is_allowed(self) -> None:
+        layouts = (
+            "根据参考图中3:1的商品高宽比自主安排构图与留白",
+            "参考图显示杯身长宽约3:1，AI据此自主安排构图",
+            "3:1为该商品真实高宽比，构图自主",
+            "商品为3:1的细长高宽比，构图自主",
+            "显示器原生分辨率3840×2160像素，构图自主",
+            "参考图显示相框长宽为3:2，AI据此自主构图",
+            "参考图显示折叠桌展开长宽2:1，AI根据其结构自主安排留白",
+            "相框尺寸300×400毫米完整呈现，构图自主",
+            "A4打印纸尺寸210×297毫米完整呈现，构图自主",
+            "香水瓶本体的高宽比为1:3，画面由系统自主设计",
+            "外盒规格为300×400毫米，系统自主选择画幅",
+            "纸箱长宽为400×300毫米，构图自主",
+            "屏显原生分辨率2560×1600像素，画幅自主决定",
+            "电视屏原生比例16:9，输出画幅由系统另行决定",
+            "罐体直径与高度之比1:2属于商品真实几何，构图自主",
+            "包装盒长宽高为30×20×10厘米，画面自主组织",
+            "产品内置屏为2.8英寸，原生分辨率320×240像素，构图自主",
+            "仪表面板原生分辨率1280×480像素，系统自主构图",
+            "发光二极管点阵屏原生分辨率640×320像素，画面自主",
+            "参考图显示包装3:2结构，输出比例由系统决定",
+            "参考图中瓶身呈三比一，系统自主定画幅",
+            "商品海报本体长宽比3:4，构图自主",
+            "商品是装饰画，画布本体长宽比3:4，构图自主",
+            "画布包长宽比3:2，构图自主",
+            "商品主图案长宽比2:1，构图自主",
+            "画布本体尺寸300×400毫米，构图自主",
+        )
+        original = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        for layout in layouts:
+            with self.subTest(layout=layout):
+                frame = make_frame(1, "主图-01").replace(original, layout)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+        frame = make_frame(1, "主图-01").replace(
+            "平视中景，自然透视，焦点落在商品正面",
+            "宽1920px、高1080px的显示屏展示真实内容，构图自主",
+        )
+        self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_non_canvas_ratios_and_product_parameters_are_allowed(self) -> None:
+        layouts = (
+            "采用3/4侧视角，焦点落在商品正面",
+            "以3/4侧面机位展示杯身结构",
+            "保留1/4英寸螺纹接口，构图自主",
+            "相机传感器尺寸为1/2英寸，构图自主",
+            "镜头保持1:1原生放大倍率，构图自主",
+            "套装保持3:1数量关系，构图自主",
+            "摄像头支持1920×1080视频，构图自主",
+            "参考图显示保温杯高宽3:1，AI据此自主构图",
+            "参考图显示沙发长宽2:1，AI据此自主构图",
+            "显示屏宽1920px、高1080px并展示真实内容，构图自主",
+            "商品采用4×5厘米包装，构图自主",
+        )
+        original = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        for layout in layouts:
+            with self.subTest(layout=layout):
+                frame = make_frame(1, "主图-01").replace(original, layout)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_reference_product_ratios_do_not_lock_output_frame(self) -> None:
+        layouts = (
+            "商品真实比例等于参考图证据，AI自主构图",
+            "商品高宽比取自参考图，AI自主构图",
+            "杯身比例来自参考图，AI自主安排构图",
+            "产品真实比例与参考图一致，AI自主构图",
+            "商品外形比例沿用参考图，AI自主构图",
+            "沿用参考图中的商品真实比例，AI自主构图",
+        )
+        original = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        for layout in layouts:
+            with self.subTest(layout=layout):
+                frame = make_frame(1, "主图-01").replace(original, layout)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_product_internal_percentages_are_allowed(self) -> None:
+        layouts = (
+            "产品屏占比为90%，根据真实结构自主构图",
+            "商品正面的屏幕覆盖机身面积90%，系统自主安排构图",
+            "产品图案覆盖包装正面60%，构图自主",
+            "画面展示含棉量95%的产品，系统自主构图",
+            "95%含棉量的商品成为视觉焦点，构图自主",
+            "画面聚焦电量为80%的设备，构图自主",
+            "画面展示包装原文“浓度50%”，构图自主",
+            "商品包装原文“有效成分占比20%”逐字保持，构图自主",
+            "产品图案覆盖包装正面区域60%，构图自主",
+            "商品屏幕占据机身正面区域90%，构图自主",
+            "货品标签覆盖盒体区域30%，构图自主",
+            "商品应用占存储空间50%，构图自主",
+        )
+        original = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        for layout in layouts:
+            with self.subTest(layout=layout):
+                frame = make_frame(1, "主图-01").replace(original, layout)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_negated_fixed_specs_are_allowed(self) -> None:
+        layouts = (
+            "不要按16:9输出，系统自主决定画幅",
+            "不要求1080×1440像素输出，尺寸交由后期适配",
+            "商品不占画面45%，实际占比由系统自主确定",
+            "不要锁成一比一方图，画幅由系统自主决定",
+            "不把成图比例设成3:4，由系统自主决定",
+            "不强制使用3:4比例，由系统自主决定",
+            "无需限定1080×1440像素，交给后期适配",
+            "请勿将画面做成横版，由系统自主决定",
+            "切勿输出3:4画幅，由系统自主决定",
+            "系统不一定采用横版，应按商品自主决定",
+        )
+        original = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        for layout in layouts:
+            with self.subTest(layout=layout):
+                frame = make_frame(1, "主图-01").replace(original, layout)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_adversarial_negations_and_product_specs_are_allowed(self) -> None:
+        layouts = (
+            # 明确否定输出约束
+            "成图不固定为3:4，系统自主安排构图",
+            "参考图画幅为3:4但不作为输出约束",
+            "商品占六成是已否决方案",
+            "即便输入图为9:16，也不继承其外框",
+            "画面不限定为3:4，系统自由决定",
+            "不把画幅固定成1:1",
+            "不要按参考图的横版外框出图",
+            # 由系统比较后自主决定，不是人工锁定方向
+            "对比横版与竖版后由AI选择",
+            # 商品本体、包装或显示部件的真实规格
+            "三比四不是输出比例，而是包装盒自身宽高比",
+            "投影仪原生显示分辨率3840×2160",
+            "显示模组原生像素矩阵1920×720",
+            "电子墨水面板真实像素1872×1404",
+            "纸张规格A4竖版，作为商品实拍",
+            "竖版海报是本次拍摄的商品，不是成图规格",
+            # 第二轮独立压力测试补充
+            "系统比较横版和竖版后自主选择",
+            "AI依据任务需要自主选择横版画面并安排留白",
+            "成图不是固定4:5，系统自主安排",
+            "原照片为3:4，仅描述输入载体，不约束成图",
+            "商品占画面七成的方案已被取消",
+        )
+        original = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        for layout in layouts:
+            with self.subTest(layout=layout):
+                frame = make_frame(1, "主图-01").replace(original, layout)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+        camera_fields = (
+            "使用85mm镜头，f/4光圈，快门1/125秒，ISO 100，焦点落在商品正面",
+            "相机焦距50mm，快门1/60秒，白平衡5600K，焦点落在商品正面",
+            "灯光色温约4500K，曝光补偿+0.3EV，焦点落在商品正面",
+        )
+        original_camera = "平视中景，自然透视，焦点落在商品正面"
+        for camera_field in camera_fields:
+            with self.subTest(camera_field=camera_field):
+                frame = make_frame(1, "主图-01").replace(original_camera, camera_field)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_independent_black_box_canvas_constraints_are_rejected(self) -> None:
+        cases = (
+            # 中文自然比例、相对边长和输出规格
+            ("layout", "宽和高分别按三份与四份配比"),
+            ("prompt", "最终图片按三百点每英寸输出"),
+            ("layout", "正文安全区域精确保留25%"),
+            ("layout", "画布高边固定成短边的两倍"),
+            ("layout", "横向五份、纵向四份来确定画框"),
+            ("layout", "画面长宽按照七五开的比例"),
+            ("prompt", "成图每条边固定十厘米"),
+            ("layout", "最终画框限定为纵边是横边的四分之五"),
+            ("prompt", "输出图的宽边固定为1200点"),
+            ("prompt", "画面高宽固定采用每五份高配四份宽"),
+            ("layout", "画布宽高固定为四份对七份"),
+            ("layout", "最终图采用平方画框"),
+            ("layout", "画面纵横两边按七份和十一份分配"),
+            ("prompt", "成品宽边固定一千五百像素点"),
+            ("layout", "成图宽边至少是高边的1.3倍"),
+            # 主体、留白与安全区占比
+            ("layout", "让产品的可见高度达到画布的0.7倍"),
+            ("layout", "商品边界覆盖画布宽度的四分之三"),
+            ("layout", "让核心产品吃掉画面一半空间"),
+            ("layout", "产品在版心内占五成五"),
+            ("layout", "主商品尺寸覆盖成图纵边的七成半"),
+            ("layout", "商品在画心占到百分之六十五"),
+            ("layout", "主产品展开宽度覆盖输出图八成"),
+            ("layout", "主商品高度占据成片约百分之七十二"),
+            ("layout", "主商品盖住画布约七成"),
+            ("layout", "让主体宽到页面的四分之三"),
+            ("layout", "留出30%的空白区域"),
+            ("layout", "货品可见高度不得低于画面80%"),
+            ("layout", "商品宽度不超过画布的70%"),
+            # 参考来源的外框、版式、方向与尺寸继承
+            ("layout", "构图外框锁定为参考视觉的边界"),
+            ("layout", "锁定原图的边框形状再生成"),
+            ("layout", "并非套用原图外框，只是锁定原有长宽关系"),
+            ("layout", "不直接使用参考图比例，只把画布定成与参考素材等比例"),
+            ("layout", "承袭样片边框形状生成"),
+            ("layout", "照原始照片的横竖尺寸关系排版"),
+            ("layout", "沿着样张版心比例制作"),
+            ("layout", "锁死与底图一致的边界形态"),
+            ("layout", "成图必须保有原素材的纵横关系"),
+            ("layout", "最终画框照旧沿袭上传照片"),
+            ("prompt", "参照底片原来的横纵尺度出图"),
+            ("layout", "输出套用参考底稿的边框轮廓"),
+            ("layout", "输入多宽多高，输出也多宽多高"),
+            ("layout", "不复制参考图内容，但版式照搬"),
+            ("layout", "只取商品信息，同时保留源图画幅"),
+            # 否定、后期规格、输出治理与自然方向的对抗边界
+            ("layout", "不需要修改商品，但成图保持与参考图同宽同高"),
+            ("layout", "4:5曾被排除，但当前重新采用"),
+            ("layout", "后期规格为4:5，当前构图也按它执行"),
+            ("layout", "参考图只提取商品。版式仍照搬。"),
+            ("layout", "照片横着排就行"),
+            ("layout", "宽高差必须控制在两成内"),
+            ("layout", "画布宽高比必须控制在1.2以内"),
+            ("layout", "宽度必须比高度多20%"),
+            ("layout", "画布真实几何比例为4:5"),
+            ("layout", "成图真实比例为4:5"),
+            ("layout", "输出图原生比例为4:5"),
+            ("layout", "为显示器输出1920×1080成图"),
+            ("layout", "输出1920×1080适配显示屏"),
+        )
+        original_layout = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        original_prompt_usage = "本张实际向生成模型提供全部同款参考图，按目标SKU/状态筛选商品身份、正面几何和共同特征，其他SKU不作为生成参考输入，同款资料一致，无需裁决"
+
+        for field, phrase in cases:
+            with self.subTest(field=field, phrase=phrase):
+                frame = make_frame(1, "主图-01")
+                if field == "layout":
+                    frame = frame.replace(original_layout, f"{original_layout}；{phrase}")
+                else:
+                    frame = frame.replace(
+                        original_prompt_usage,
+                        f"{phrase}；{original_prompt_usage}",
+                    )
+                with self.assertRaisesRegex(StoryboardValidationError, "固定画幅"):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_independent_black_box_negations_and_product_specs_are_allowed(self) -> None:
+        layouts = (
+            "轮胎外径与胎宽之比4:1，系统据此自主构图",
+            "不让参考素材决定横竖方向，系统自主选择",
+            "A4只属于后期交付规格，不约束当前构图",
+            "输出不是4:5，比例由AI自由决定",
+            "4:5仅是已排除的旧方案",
+            "成图与参考图不需要同宽同高",
+            "留白30%不是要求，实际由系统决定",
+            "AI可根据首屏任务自行用横图呈现",
+            "系统依据内容自动选择横构图或竖构图",
+            "设备屏幕物理像素为2560×1440，输出画幅自主",
+            "不照搬参考图版式，只提取商品结构",
+            "后期交付规格为4:5、1080×1350像素，不约束当前构图",
+            "商品包装规格4:5，输出画幅自主",
+            "参考图只提取商品。版式由系统自主决定。",
+            "横着还是竖着由系统选择",
+            "画幅并不是非得竖着，交给系统选",
+            "无需照素材的横竖走",
+            "屏幕拥有3840×2160物理像素，构图自主",
+            "显示器的物理像素为3840×2160，构图自主",
+            "这块屏幕由2560×1440个物理像素组成，构图自主",
+            "打印机原生打印分辨率300DPI，构图自主",
+            "相机拍摄分辨率6000×4000像素，构图自主",
+        )
+        original = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        for layout in layouts:
+            with self.subTest(layout=layout):
+                frame = make_frame(1, "主图-01").replace(original, layout)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_explicit_rejection_of_reference_frame_inheritance_is_allowed(self) -> None:
+        allowed_layouts = (
+            "参考图宽高关系不作为输出画面约束；系统依据商品结构、首屏任务和裁切风险自主决定纵向动线与安全区",
+            "不根据参考图比例生成成图，系统自主决定构图与留白",
+            "输出宽高比不取自参考图，系统自主决定构图与留白",
+            "成图不保持与参考图相同的宽高比，系统自主决定构图与留白",
+            "根据参考图中已确认的商品结构自主决定构图与留白",
+            "匹配参考图中的商品颜色并自主生成构图",
+            "匹配参考图构图张力但不继承外框，输出比例自主决定",
+            "不要让参考图外框决定成图，比例由系统自主选择",
+            "参考图显示包装3:2结构，输出比例由系统决定",
+            "参考图中瓶身呈三比一，系统自主定画幅",
+        )
+
+        for layout in allowed_layouts:
+            with self.subTest(layout=layout):
+                frame = make_frame(1, "主图-01").replace(
+                    "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界",
+                    layout,
+                )
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
+    def test_fresh_adversarial_layout_constraints_are_rejected(self) -> None:
+        """固化三路全新上下文审计发现的漏拦表达。"""
+
+        cases = (
+            # 独立画布模糊测试
+            ("layout", "把画布宽度与高度固定为四分之三。"),
+            ("prompt", "输出方向明确规定为纵版。"),
+            ("layout", "最终画布固定横置。"),
+            ("prompt", "交付文件只能是1080x1440像素。"),
+            ("prompt", "交付图宽一千五百像素且高二千像素。"),
+            ("prompt", "最终文件尺寸只允许720乘1280像素。"),
+            ("layout", "商品必须占据画面百分之七十。"),
+            ("prompt", "主体面积固定覆盖画布百分之六十五。"),
+            ("layout", "杯体必须覆盖成图的三分之二。"),
+            ("layout", "主商品高度锁定为画面高度的四分之三。"),
+            ("prompt", "主体覆盖率不得低于百分之七十五。"),
+            ("layout", "商品占比规定在百分之六十至百分之六十五。"),
+            ("prompt", "核心对象必须铺满九成画面。"),
+            ("layout", "杯身在画布中的面积固定为百分之五十五。"),
+            ("prompt", "产品轮廓必须占整个画框约百分之七十。"),
+            ("prompt", "商品横向跨度恒定占画宽的五分之四。"),
+            ("layout", "主物体只能占画布一半。"),
+            ("prompt", "成品中杯子必须覆盖百分之八十二的像素区域。"),
+            ("prompt", "不得改变参考照片的横竖比例。"),
+            # 独立语义审计
+            ("layout", "并非不采用1:1的画面比例"),
+            ("layout", "不是不需要1:1的输出比例"),
+            ("layout", "参考图展示完整商品！画布继承其外框"),
+            ("layout", "参考图展示完整商品。画幅不沿用其比例，但当前恢复采用"),
+            ("layout", "参考图展示完整商品。画幅并非不按其比例生成"),
+            ("layout", "参考图展示完整商品。背景使用柔和光。画幅沿用比例"),
+            ("layout", "参考图展示完整商品。先清理背景。输出宽高关系照旧"),
+            ("layout", "参考图展示完整商品。保留真实颜色。画框继承比例"),
+            ("layout", "参考图展示完整商品。构图简洁。版式与之相同"),
+            ("layout", "参考图展示完整商品。构图简洁。画布按前者比例"),
+            ("layout", "本次商品图比例为1:1"),
+            ("layout", "本次产品图宽高比为4:5"),
+            ("layout", "本次包装展示图比例为3:4"),
+            ("layout", "本次商品展示图尺寸为1200×1600像素"),
+            ("layout", "设备原生分辨率1920×1080，当前输出沿用该分辨率"),
+            ("layout", "设备原生分辨率1920×1080，但当前图片固定为同尺寸"),
+            # 独立发布门禁
+            ("layout", "最终成像比例设成1.25，右侧留白"),
+            ("layout", "页面纵横比限定在0.72，主体居中"),
+            ("layout", "横边需比纵边少25%"),
+            ("layout", "画框宽高按2份配3份"),
+            ("layout", "输出采用正方画框并居中展示商品"),
+            ("layout", "最终成像固定宽屏"),
+            ("layout", "画面限定为纵版"),
+            ("layout", "只允许横向长图"),
+            ("layout", "主图方向不可改，保持纵屏"),
+            ("layout", "成片外轮廓要比高度宽"),
+            ("layout", "商品主体吞掉成图面积的65%"),
+            ("layout", "产品必须覆盖版面的五分之四"),
+            ("layout", "核心商品高度限定为整张图纵边的70%"),
+            ("layout", "安全留空区固定为22%"),
+            ("layout", "文案空区必须保留三成"),
+            ("layout", "主体与留白各占一半"),
+            ("layout", "商品区覆盖总版面的2/3"),
+            ("layout", "最终图片照搬上传素材的边长关系"),
+            ("layout", "输出横纵比例与底稿同步"),
+            ("layout", "参考照片的外框直接决定最终画面"),
+            ("layout", "使用来图原有方向排出成片"),
+            ("layout", "底稿多宽多高，成品就多宽多高"),
+            ("layout", "原始影像的边界形态作为输出模板"),
+            ("layout", "沿用样板的画幅制作"),
+            ("layout", "复制参考视觉裁切框"),
+            ("layout", "维持源照片的横纵方向"),
+            ("prompt", "输出比例默认0.9"),
+            # 主线程边界审计
+            ("layout", "留白与主体之比4:1"),
+            ("layout", "文案区与商品区之比1:2"),
+            ("layout", "当前构图固定为4:5，后期A4规格不约束当前构图"),
+            # 独立复测与 README 派生变形
+            ("layout", "参考图展示完整商品。方向照旧"),
+            ("prompt", "把原图九比十六比例带入成图。"),
+            ("layout", "售卖主体在成图内所占区域不得少于七成半。"),
+            ("layout", "产品可见轮廓固定覆盖版心的零点六八。"),
+            ("layout", "文案留空与商品区域按一份对三份分配。"),
+            ("layout", "生成结果中杯体宽度一律达到画面宽边的百分之八十五。"),
+            ("layout", "来图是几比几，最终图片就照着同样关系排。"),
+            ("layout", "输入素材的长短边关系直接用作本张外框。"),
+            ("layout", "输入照片横则输出横，输入照片竖则输出竖。"),
+        )
+        original_layout = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        original_prompt_usage = "本张实际向生成模型提供全部同款参考图，按目标SKU/状态筛选商品身份、正面几何和共同特征，其他SKU不作为生成参考输入，同款资料一致，无需裁决"
+
+        for field, phrase in cases:
+            with self.subTest(field=field, phrase=phrase):
+                frame = make_frame(1, "主图-01")
+                if field == "layout":
+                    frame = frame.replace(original_layout, phrase)
+                else:
+                    frame = frame.replace(
+                        original_prompt_usage,
+                        f"{phrase}；{original_prompt_usage}",
+                    )
+                with self.assertRaisesRegex(StoryboardValidationError, "固定画幅"):
+                    validate_storyboard(make_storyboard([frame]))
+
+    def test_fresh_adversarial_nonbinding_and_product_facts_are_allowed(self) -> None:
+        """固化三路全新上下文审计发现的误杀表达。"""
+
+        cases = (
+            # 独立画布模糊测试
+            ("layout", "无需沿用参考图的横版外框。"),
+            ("layout", "不预设一千二百乘一千五百像素输出。"),
+            ("layout", "禁止用主体占画面百分之六十五替代识别判断。"),
+            ("camera", "全画幅传感器物理尺寸为三十六乘二十四毫米。"),
+            ("camera", "像素位移模式采集一万二千乘八千的源文件。"),
+            ("camera", "相机裁切模式记录三千八百四十乘二千五百六十像素。"),
+            # 独立语义审计
+            ("layout", "画面比例固定为1:1的方案已取消"),
+            ("layout", "画面比例固定为1:1并非当前要求"),
+            ("layout", "此前采用4:5的输出比例，现已弃用"),
+            ("layout", "画面比例固定为1:1，现已取消"),
+            ("layout", "原计划画面比例为1:1，但已改为自主构图"),
+            ("layout", "画面比例1:1只是被否决的旧方案"),
+            ("layout", "画面比例1:1仅用于说明被取消的方案"),
+            ("layout", "原先固定4:5的画面比例，方案已经废弃"),
+            ("layout", "原先固定4:5的画面比例，旧方案作废"),
+            ("layout", "按参考图比例出图的约束已排除"),
+            ("production", "生产要求竖版，不决定当前构图"),
+            ("production", "后期交付规格为横版，不约束当前构图"),
+            ("production", "平台交付适配为方图，不限制当前画幅"),
+            ("production", "1:1用于平台交付，当前构图不受影响"),
+            ("production", "1:1是交付端裁切规格，与本次构图无关"),
+            ("production", "后期会裁成1:1，生成阶段不锁画幅"),
+            ("production", "平台交付需要1080×1080像素，构图阶段自由"),
+            ("production", "仅在导出时适配4:5，当前生成保持自适应"),
+            ("layout", "参考图展示完整商品。画幅沿用其比例的方案已取消"),
+            ("layout", "参考图自身比例为1:2，但输出画幅不跟随"),
+            ("camera", "相机支持输出6000×4000像素"),
+            ("production", "显示器交付为横版，仅用于后期且不决定当前构图"),
+            ("camera", "相机支持输出6000×4000像素，但当前画面由系统自主决定"),
+            # 独立发布门禁
+            ("camera", "扫描仪支持600dpi，画面由系统安排"),
+            ("camera", "使用1/3俯视角展示顶部结构"),
+            ("camera", "采用2/3侧后方机位但不展示未知结构"),
+            ("layout", "参考图显示商品是横向挂画，输出方向由AI决定"),
+            ("layout", "桌面展开后长为宽的1.8倍，画面由系统自主安排"),
+            ("layout", "参考照片记录的是3:2输入外框，输出不会沿用它"),
+            # 独立复测与 README 派生变形
+            ("prompt", "不得把四比五当作成图硬约束。"),
+            ("prompt", "画布尺寸不设为九百乘一千二百像素。"),
+            ("prompt", "画面方向由使用场景和信息动线共同决定。"),
+            ("prompt", "不要求最终画面维持一比一，系统根据裁切风险决定空间。"),
+            ("prompt", "原始素材采用方形边框，当前画面仍按信息层级自主组织。"),
+            ("layout", "产品图案宽高为5:7，画布按内容自适应。"),
+            ("layout", "不限定画面为正方形输出。"),
+            ("layout", "五比七并不是本张成图约束，外框按信息层级另行组织。"),
+            ("layout", "参考照片自身是三比二，仅用于识别杯体，输出外框重新决定。"),
+        )
+        original_layout = "商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界"
+        original_camera = "平视中景，自然透视，焦点落在商品正面"
+        original_production = "模型生成背景与光影，真实商品层和文字由后期复核"
+        original_prompt_usage = "本张实际向生成模型提供全部同款参考图，按目标SKU/状态筛选商品身份、正面几何和共同特征，其他SKU不作为生成参考输入，同款资料一致，无需裁决"
+        for field, phrase in cases:
+            with self.subTest(field=field, phrase=phrase):
+                frame = make_frame(1, "主图-01")
+                if field == "layout":
+                    frame = frame.replace(original_layout, f"{original_layout}；{phrase}")
+                elif field == "camera":
+                    frame = frame.replace(original_camera, f"{original_camera}；{phrase}")
+                elif field == "prompt":
+                    frame = frame.replace(
+                        original_prompt_usage,
+                        f"{original_prompt_usage}；{phrase}",
+                    )
+                else:
+                    frame = frame.replace(original_production, phrase)
+                self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
+
     def test_valid_fixture(self) -> None:
         result = validate_storyboard(FIXTURE.read_text(encoding="utf-8"))
         self.assertEqual(result, ["主图-01"])
@@ -671,14 +1861,14 @@ class StoryboardValidatorTests(unittest.TestCase):
         for phrase in safe_phrases:
             with self.subTest(phrase=phrase):
                 frame = make_frame(1, "主图-01").replace(
-                    "- 画布与布局：【商品居中，占画面一半，右侧保留短文案安全区】",
-                    f"- 画布与布局：【{phrase}，占画面一半，右侧保留短文案安全区】",
+                    "- 画布与布局：【商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界】",
+                    f"- 画布与布局：【{phrase}，商品保持清楚识别，右侧保留短文案安全区】",
                 )
                 self.assertEqual(validate_storyboard(make_storyboard([frame])), ["主图-01"])
 
         unsafe = make_frame(1, "主图-01").replace(
-            "- 画布与布局：【商品居中，占画面一半，右侧保留短文案安全区】",
-            "- 画布与布局：【FAST-200模型组织画面，商品居中，占画面一半】",
+            "- 画布与布局：【商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界】",
+            "- 画布与布局：【FAST-200模型组织画面，商品居中并保持清楚识别】",
         )
         with self.assertRaises(StoryboardValidationError):
             validate_storyboard(make_storyboard([unsafe]))
@@ -712,8 +1902,8 @@ class StoryboardValidatorTests(unittest.TestCase):
         for phrase in unsafe_phrases:
             with self.subTest(phrase=phrase):
                 candidate = make_frame(1, "主图-01").replace(
-                    "- 画布与布局：【商品居中，占画面一半，右侧保留短文案安全区】",
-                    f"- 画布与布局：【{phrase}，商品居中，占画面一半】",
+                    "- 画布与布局：【商品居中完整呈现，轮廓清楚，右侧保留低细节短文案安全区，关键结构避开裁切边界】",
+                    f"- 画布与布局：【{phrase}，商品居中并保持清楚识别】",
                 )
                 with self.assertRaises(StoryboardValidationError):
                     validate_storyboard(make_storyboard([candidate]))

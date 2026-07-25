@@ -97,6 +97,340 @@ OUTPUT_ID_PREFIXES = {
     "无字场景图": "无字场景图",
 }
 OUTPUT_PREFIX_ALIASES = {"透明背景图": "透明图"}
+COMPOSITION_FIELDS = frozenset({"画布与布局", "最终画面", "镜头与构图"})
+CANVAS_RULE_FIELDS = tuple(
+    name
+    for name in REQUIRED_FIELDS + OPTIONAL_FIELDS
+    if name not in {"输出对象", "生产与后期"}
+)
+
+_CHINESE_NUMBER = r"[零〇一二三四五六七八九十百千万两]+"
+_NUMBER = rf"(?:\d+(?:\.\d+)?|{_CHINESE_NUMBER}(?:点{_CHINESE_NUMBER})?)"
+_DIMENSION_NUMBER = rf"(?:{_NUMBER}\s*[Kk]?)"
+_DIMENSION_UNIT = r"(?:px|个?像素(?:点)?|毫米|厘米|公分|mm|cm|英寸|寸|点)"
+_OCCUPANCY_VALUE = (
+    rf"(?:\d+(?:\.\d+)?\s*%|\d+(?:\.\d+)?\s*/\s*\d+(?:\.\d+)?|"
+    rf"(?:0?\.\d+|1\.0+)|{_CHINESE_NUMBER}点{_CHINESE_NUMBER}|"
+    rf"百分之(?:\d+(?:\.\d+)?|{_CHINESE_NUMBER})|"
+    rf"{_CHINESE_NUMBER}分之{_CHINESE_NUMBER}|{_CHINESE_NUMBER}成(?:{_CHINESE_NUMBER}|半)?|一半)"
+)
+_OCCUPANCY_SUBJECT = (
+    r"(?:(?:主|核心)?(?:商品|产品|货品|对象|物体|物件)(?:视觉|主体|本体|轮廓)?|"
+    r"(?:售卖|展示|核心|主要)?主体|主物|主角|主物体|核心视觉载体|视觉主体|"
+    r"杯体|杯身|杯子|瓶体|瓶身|罐体|盒体|包体)"
+)
+_OUTPUT_OBJECT = (
+    r"(?:最终(?:图片|图像|画面|版面|成像|文件)|整体版面|页面|画面|成像|成图|成片|成品(?!率)|出图|出片|终稿|"
+    r"输出(?:图|图片|图像|画面|尺寸|分辨率|比例)?|导出|交付(?:图|图片|图像|画面|文件)|文件尺寸|"
+    r"画布(?!本体|包)|(?<!全)画幅|画框|外框|版式|主图(?!案)|SKU图|详情页图?|"
+    r"(?:商品|产品)(?:展示)?图(?!案)|包装展示图|(?:商品|产品)页面|"
+    r"海报(?!本体)|图片|图像)"
+)
+OUTPUT_OBJECT_RE = re.compile(_OUTPUT_OBJECT, re.IGNORECASE)
+_GEOMETRY_METRIC = (
+    r"(?:高宽比|宽高比|长宽比|高宽比例|宽高比例|长宽比例|长宽关系|宽高关系|"
+    r"纵横比|真实比例|外形比例|几何比例|原生比例|直径与高度之比|长宽高|长宽|宽高|高宽)"
+)
+
+FRAME_RATIO_RE = re.compile(
+    rf"(?:(?<![\d.])\d{{1,4}}(?:\.\d+)?\s*(?::|∶|/|比)\s*"
+    rf"\d{{1,4}}(?:\.\d+)?(?![\d.])|{_CHINESE_NUMBER}\s*(?::|∶|/|比)\s*"
+    rf"{_CHINESE_NUMBER})"
+)
+DIMENSION_PAIR_RE = re.compile(
+    rf"(?<![\d.]){_DIMENSION_NUMBER}\s*{_DIMENSION_UNIT}?\s*"
+    rf"(?:[xX×*]|乘(?:以)?|by)\s*{_DIMENSION_NUMBER}\s*{_DIMENSION_UNIT}?(?![\d.])",
+    re.IGNORECASE,
+)
+SCALAR_RATIO_RE = re.compile(
+    rf"(?:宽高比|高宽比|长宽比|纵横比|成图比例|成像比例|出图比例|输出比例|画面比例|画幅比例|比例)"
+    rf"\s*(?:为|是|设为|设成|设置为|固定为|控制在|锁死在|限定为|定为|等于|"
+    rf"限定在|建议(?:设|定)?为|默认(?:设|定)?(?:为)?|优先(?:设|定)?为|=)\s*{_NUMBER}"
+    rf"(?!\s*(?::|∶|/|比)\s*(?:\d|{_CHINESE_NUMBER}))"
+)
+AXIS_DIMENSION_PAIR_RE = re.compile(
+    rf"(?:(?:宽|宽度)\s*(?:为|是|设为|设成|设置为|固定为|控制在|必须是|必须达到)?\s*{_DIMENSION_NUMBER}\s*{_DIMENSION_UNIT}?"
+    rf"\s*(?:，|、|/|；|-|以及|和|与|且)?\s*"
+    rf"(?:高|高度|长|长度)\s*(?:为|是|设为|设成|设置为|固定为|控制在|必须是|必须达到)?\s*{_DIMENSION_NUMBER}\s*{_DIMENSION_UNIT}?|"
+    rf"(?:高|高度|长|长度)\s*(?:为|是|设为|设成|设置为|固定为|控制在|必须是|必须达到)?\s*{_DIMENSION_NUMBER}\s*{_DIMENSION_UNIT}?"
+    rf"\s*(?:，|、|/|；|-|以及|和|与|且)?\s*"
+    rf"(?:宽|宽度)\s*(?:为|是|设为|设成|设置为|固定为|控制在|必须是|必须达到)?\s*{_DIMENSION_NUMBER}\s*{_DIMENSION_UNIT}?|"
+    rf"{_DIMENSION_NUMBER}\s*{_DIMENSION_UNIT}?\s*(?:宽|宽度)\s*(?:，|、|/|；|-|以及|和|与|且)?\s*"
+    rf"{_DIMENSION_NUMBER}\s*{_DIMENSION_UNIT}?\s*(?:高|高度|长|长度)|"
+    rf"{_DIMENSION_NUMBER}\s*{_DIMENSION_UNIT}?\s*(?:高|高度|长|长度)\s*(?:，|、|/|；|-|以及|和|与|且)?\s*"
+    rf"{_DIMENSION_NUMBER}\s*{_DIMENSION_UNIT}?\s*(?:宽|宽度))",
+    re.IGNORECASE,
+)
+SINGLE_DIMENSION_RE = re.compile(
+    rf"(?:(?:每条边|各边|四边|边长|最长边|长边|短边|宽边|高边|横边|纵边|宽|宽度|高|高度|长|长度)"
+    rf"[^，。；\n]{{0,18}}{_DIMENSION_NUMBER}\s*{_DIMENSION_UNIT}|"
+    rf"{_DIMENSION_NUMBER}\s*{_DIMENSION_UNIT}\s*(?:每条边|各边|四边|边长|宽|宽度|高|高度|长|长度|最长边|长边|短边|宽边|高边|横边|纵边))",
+    re.IGNORECASE,
+)
+RESOLUTION_CLASS_RE = re.compile(r"(?<![\d.])\d+(?:\.\d+)?\s*[Kk](?![A-Za-z\d.])")
+_RELATIVE_RATIO_VALUE = rf"(?:{_NUMBER}|{_CHINESE_NUMBER}分之{_CHINESE_NUMBER}|一半)"
+RELATIVE_DIMENSION_RE = re.compile(
+    rf"(?:(?:高|高度|高边|宽|宽度|宽边|横边|纵边|长|长度|长边|短边)\s*"
+    rf"(?:固定为|固定成|设为|设成|设置为|为|是|等于|控制在|必须是|必须达到|不得低于|不低于|至少(?:为|是|达到)?)\s*"
+    rf"(?:画面|画布|画幅|成图|输出)?(?:高|高度|高边|宽|宽度|宽边|横边|纵边|长|长度|长边|短边)(?:的)?\s*"
+    rf"{_RELATIVE_RATIO_VALUE}(?:\s*倍)?|"
+    rf"(?:宽|宽度|宽边|高|高度|高边|横边|纵边|长边|短边)\s*(?:必须|务必|需要)?\s*比\s*"
+    rf"(?:宽|宽度|宽边|高|高度|高边|横边|纵边|长边|短边)\s*(?:多|少|增加|减少)\s*"
+    rf"{_RELATIVE_RATIO_VALUE})"
+)
+RATIO_RANGE_RE = re.compile(
+    rf"(?:宽高比|高宽比|长宽比|纵横比|成图比例|出图比例|输出比例|画面比例|画幅比例|比例)"
+    rf"\s*(?:控制)?(?:在|介于|从)?\s*{_NUMBER}\s*(?:到|至|~|～|—|-)\s*{_NUMBER}\s*(?:之间|范围内)?"
+)
+_AXIS_WORD = r"(?:宽(?:度|边)?|高(?:度|边)?|横(?:向|边)?|纵(?:向|边)?|长边|短边)"
+_AXIS_PAIR = r"(?:宽高|高宽|长宽|纵横|横纵)"
+_PART_VALUE = rf"(?:{_NUMBER}\s*份?)"
+NATURAL_AXIS_RATIO_RE = re.compile(
+    rf"(?:"
+    rf"(?:宽(?:度|边)?|横(?:向|边)?)\s*(?:和|与|、)\s*(?:高(?:度|边)?|纵(?:向|边)?)"
+    rf"\s*(?:分别)?(?:按(?:照)?|采用|设置为|固定为|为)?\s*{_PART_VALUE}\s*(?:和|与|对|配)\s*{_PART_VALUE}(?:配比|比例|分配)?|"
+    rf"{_AXIS_WORD}\s*{_PART_VALUE}\s*[，,、；;]\s*{_AXIS_WORD}\s*{_PART_VALUE}(?:[^，。；\n]{{0,10}}(?:画框|画布|画幅|成图|输出))?|"
+    rf"{_AXIS_PAIR}(?:两边)?\s*(?:必须|务必|需要|固定|限定|控制)?(?:按(?:照)?|采用|设置为|固定为|为)?\s*"
+    rf"{_PART_VALUE}\s*(?:和|与|对|配)\s*{_PART_VALUE}(?:配比|比例|分配)?|"
+    rf"(?:每)?{_PART_VALUE}\s*(?:高|纵边|纵向)\s*(?:配|对|比|和|与)\s*{_PART_VALUE}\s*(?:宽|横边|横向)|"
+    rf"{_AXIS_PAIR}[^，。；\n]{{0,12}}[一二三四五六七八九]{{2}}开(?:的)?(?:比例)?"
+    rf")"
+)
+AXIS_PAIR_FRACTION_RE = re.compile(
+    rf"(?:(?:画布|画面|画幅|画框|成图|成片|输出)[^，。！？!?；;\n]{{0,8}})?"
+    rf"{_AXIS_WORD}\s*(?:和|与|对)\s*{_AXIS_WORD}"
+    rf"[^，。！？!?；;\n]{{0,12}}(?:固定为|设为|设成|限定为|控制在|为|是)\s*"
+    rf"{_OCCUPANCY_VALUE}"
+)
+BOUNDED_SCALAR_RATIO_RE = re.compile(
+    rf"(?:宽高比|高宽比|长宽比|纵横比|成图比例|出图比例|输出比例|画面比例|画幅比例|比例)"
+    rf"\s*(?:必须|务必|需要|应当)?\s*(?:控制|限定|保持)?(?:在|为)?\s*{_NUMBER}\s*(?:以内|以下|以上|之内|之上)"
+)
+AXIS_DIFFERENCE_RE = re.compile(
+    rf"(?:{_AXIS_PAIR}(?:之)?差\s*(?:必须|务必|需要|应当)?\s*(?:控制|限定|保持)?(?:在|为)?\s*"
+    rf"{_OCCUPANCY_VALUE}\s*(?:内|以内|以下|以上|之内|之上)|"
+    rf"{_AXIS_WORD}\s*(?:必须|务必|需要|需|应当)?\s*比\s*{_AXIS_WORD}\s*(?:多|少|增加|减少)\s*{_OCCUPANCY_VALUE})"
+)
+SQUARE_FRAME_RE = re.compile(
+    r"(?:最终图|成图|成片|输出图|输出|画面|画布|画幅|画框)[^，。；\n]{0,10}(?:平方|等边|正方(?:形)?)(?:画框|外框|画幅|画面)?|"
+    r"(?:平方|等边|正方(?:形)?)(?:画框|外框|画幅|画面)"
+)
+OUTPUT_DENSITY_RE = re.compile(
+    rf"(?<![\d.]){_NUMBER}\s*(?:DPI|PPI|点\s*每\s*英寸)(?![A-Za-z\d.])",
+    re.IGNORECASE,
+)
+ORIENTATION_TOKEN_RE = re.compile(
+    r"(?:横版|竖版|纵版|横幅|竖幅|宽幅|纵长|竖长|横长|横屏|竖屏|纵屏|宽屏|横置|纵置|横图|竖图|"
+    r"横向长图|纵向长图|横构图|竖构图|方幅|宽图|正方形|方形|方图|横着|竖着|"
+    r"竖向(?!纹理|肌理|图案|线条|结构|排列|延展|移动)|"
+    r"横向(?!纹理|肌理|图案|线条|结构|排列|延展|移动)|"
+    r"纵向(?!纹理|肌理|图案|线条|结构|排列|延展|移动))",
+    re.IGNORECASE,
+)
+ABSOLUTE_ORIENTATION_CUE_RE = re.compile(
+    r"(?:只能|只准|只允许|必须|限定|固定|要求|明确规定|硬性要求|锁定|锁成|不可改|务必|保持|一律|统一|默认|"
+    r"需要|给我|交付|呈现|定为|设为|设置为|按\s*A\d+)",
+    re.IGNORECASE,
+)
+ORIENTATION_ACTION_RE = re.compile(
+    r"(?:做(?:成)?|制成|制作|生成|输出|出图|出片|采用|使用|用|选择|交(?:付)?|呈现|组织|按(?:照)?)",
+    re.IGNORECASE,
+)
+QUALITATIVE_FRAME_RE = re.compile(
+    r"(?:(?:画面|画布|画幅|成图|成片|输出|主图|图片)[^，。；\n]{0,16}"
+    r"(?:更宽[^，。；\n]{0,8}(?:不是|而非|不要|不应)?[^，。；\n]{0,4}更高|"
+    r"更高[^，。；\n]{0,8}(?:不是|而非|不要|不应)?[^，。；\n]{0,4}更宽))"
+)
+QUALITATIVE_ORIENTATION_RE = re.compile(
+    r"(?:(?:最终)?(?:成像|成图|成片|画面|画布|画幅|画框|外轮廓)[^，。；\n]{0,16}"
+    r"(?:要|需|必须|固定)?\s*比\s*(?:高度|纵边|宽度|横边)[^，。；\n]{0,4}(?:宽|高|长|短))"
+)
+PAPER_FORMAT_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:A[0-9]|B[0-9]|C[0-9]|二寸|小二寸|明信片)(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+SUBJECT_OCCUPANCY_RE = re.compile(
+    rf"(?:(?:把|将|让)?\s*{_OCCUPANCY_SUBJECT}(?:视觉|可见)?(?:高度|宽度|面积)?\s*"
+    rf"(?:必须|务必|需要|应当|固定|恒定|锁定|限定|规定)?\s*"
+    rf"(?:占比(?:定为|设为|控制在|控制为|限定在|规定在|约为|为|是)?|覆盖率(?:定为|控制在|不得低于|不低于|为|是)?|"
+    rf"约?占(?:据|住)?|占(?:据|住)?|吞掉|填充|填满|铺满|铺占|铺到|覆盖|限定在|限制在|锁定为|"
+    rf"定为|设为|固定成|控制在|控制为|达到|压在|为|是)\s*"
+    rf"(?:(?:整个)?(?:画面|页面|版面|画幅|画布|版心)(?:高度|宽度|面积)?(?:的)?\s*)?"
+    rf"(?:大约|约)?{_OCCUPANCY_VALUE}(?:\s*(?:至|到|~|～|- )\s*{_OCCUPANCY_VALUE})?(?:\s*倍)?"
+    rf"(?:\s*(?:整个)?(?:画面|页面|版面|画幅|画布|版心)(?:高度|宽度|面积)?)?(?:的区域内)?|"
+    rf"{_OCCUPANCY_VALUE}(?:的)?\s*(?:画面|页面|版面|画幅|画布|版心)\s*"
+    rf"(?:交给|留给|留作|用作|作为)\s*(?:商品|产品|货品|主体|商品区|主体区)|"
+    rf"(?:画面|页面|版面|画幅|画布|版心)(?:的)?\s*{_OCCUPANCY_VALUE}\s*"
+    rf"(?:交给|留给|留作|用作|作为)\s*(?:商品|产品|货品|主体|商品区|主体区)|"
+    rf"{_OCCUPANCY_SUBJECT}\s*(?:高度|宽度|面积)\s*(?:为|是|设为|限定为|控制在)\s*"
+    rf"(?:画面|页面|版面|画幅|画布)(?:高度|宽度|面积)?(?:的)?\s*{_OCCUPANCY_VALUE}|"
+    rf"(?:留白|安全区|商品区|主体区|主视觉面积|主体面积)\s*"
+    rf"(?:占比|比例(?:固定为|设为|控制在|限定在|为|是)?|约?占|控制在|限定在|限制在|定为|设为|固定为|约为|为|是|达到|保留)?\s*(?:大约|约)?{_OCCUPANCY_VALUE})"
+)
+_OCCUPANCY_TARGET = (
+    r"(?:(?:整个)?(?:画面|页面|版面|画幅|画布|版心|画心|成图|成片|输出图)"
+    r"(?:的)?(?:高度|宽度|面积|横边|纵边|长边|短边)?)"
+)
+NATURAL_SUBJECT_OCCUPANCY_RE = re.compile(
+    rf"(?:(?:把|将|让)?\s*{_OCCUPANCY_SUBJECT}(?:的)?"
+    rf"(?:边界|尺寸|(?:视觉|可见|展开)?(?:高度|宽度|面积|宽|高))?\s*"
+    rf"(?:在\s*(?:版心|画心|画面|页面)(?:内|中)?)?\s*"
+    rf"(?:必须|务必|需要|应当|固定|恒定|锁定|限定|规定)?\s*"
+    rf"(?:占比(?:为|是|约为|规定在)?|覆盖率|占到|约?占(?:据|住)?|占(?:据|住)?|吃掉|吞掉|盖住|覆盖|达到|压在|到|"
+    rf"不得低于|不低于|不超过|至多|至少)\s*"
+    rf"(?:{_OCCUPANCY_TARGET}(?:的)?\s*)?(?:大约|约)?{_OCCUPANCY_VALUE}(?:\s*倍)?(?:空间|区域)?|"
+    rf"(?:正文)?(?:留白|空白区域?|安全区(?:域)?|安全留空区|文案(?:空|安全)?区|商品区|主体区)\s*"
+    rf"(?:精确|严格|至少|至多|大约|约)?\s*(?:占比|比例|保留|留出|控制在|限定在|设为|为|是)?\s*"
+    rf"(?:大约|约)?{_OCCUPANCY_VALUE}|"
+    rf"(?:安全留空区|文案(?:空|安全)?区|商品区|主体区)\s*(?:必须|务必|需要|固定|限定)?\s*"
+    rf"(?:保留|覆盖|占据?|占住|为|是)?\s*(?:大约|约)?{_OCCUPANCY_VALUE}|"
+    rf"(?:留出|保留|精确保留)\s*(?:大约|约)?{_OCCUPANCY_VALUE}(?:的)?\s*"
+    rf"(?:留白|空白区域?|安全区(?:域)?|商品区|主体区))"
+)
+_OCCUPANCY_RANGE_VALUE = (
+    rf"(?:{_OCCUPANCY_VALUE})(?:\s*(?:至|到|~|～|—|-)\s*(?:{_OCCUPANCY_VALUE}))?"
+)
+# 输出画面相关的“不得改变/不得自主决定”不是普通否定，而是把输出外框
+# 重新写成硬约束。单独识别这类无数字约束的表达，避免被几何数值规则漏掉。
+_OUTPUT_FRAME_TARGET = (
+    r"(?:输出(?:的)?(?:画幅|比例|画面|画布|画框|外框|尺寸|方向|规格)|"
+    r"(?:当前|本次|最终)?(?:画幅|画面|画布|画框|外框|成图|成片|出图|输出图|图片|图像|版面|版式)"
+    r"(?:的)?(?:比例|尺寸|方向|规格)?|"
+    r"(?:成图|成片|出图|输出)(?:的)?(?:比例|尺寸|方向|规格))"
+)
+OUTPUT_FRAME_AUTONOMY_RE = re.compile(
+    rf"(?P<target>{_OUTPUT_FRAME_TARGET})\s*"
+    r"(?P<action>"
+    r"(?:不得|不能|不可|不应|不允许|禁止|严禁)\s*(?:被\s*)?"
+    r"(?:改变|修改|调整|变更|变化|改动|重设|重置|裁切|"
+    r"(?:自主|自行|自动)(?:地)?\s*(?:决定|选择|确定|安排))|"
+    r"(?:不得|不能|不可|不应|不允许|禁止|严禁)\s*"
+    r"(?:由|交给|让)\s*(?:系统|AI|模型|智能|用户|我|平台|模板)"
+    r"[^，。！？!?；;\n]{0,12}(?:自主|自行|自动)?\s*(?:决定|选择|确定|安排)|"
+    r"(?:不由|不交给|不让)\s*(?:系统|AI|模型|智能|用户|我|平台|模板)"
+    r"[^，。！？!?；;\n]{0,12}(?:自主|自行|自动)?\s*(?:决定|选择|确定|安排)|"
+    r"(?:由|交给|让)\s*(?:用户|我|平台|模板|参考图|原图|固定规则|指定值)"
+    r"[^，。！？!?；;\n]{0,12}(?:决定|选择|确定|安排)|"
+    r"(?:必须|务必|需要|应当)\s*(?:保持|锁定|固定|沿用|继承|维持)\s*"
+    r"(?:不变|原样|原比例|原尺寸|同一(?:比例|尺寸)?|参考图(?:的)?(?:比例|画幅|外框))|"
+    r"(?:只能|只允许)\s*(?:保持|锁定|固定|沿用|继承|维持)\s*"
+    r"(?:不变|原样|原比例|原尺寸|同一(?:比例|尺寸)?|参考图(?:的)?(?:比例|画幅|外框))|"
+    r"(?:保持|维持|沿用|继承)\s*"
+    r"(?:不变|原样|原比例|原尺寸|同一(?:比例|尺寸)?|参考图(?:的)?(?:比例|画幅|外框))|"
+    r"(?:不变|原样)(?=$|[，。！？!?；;])|"
+    r"(?:固定|锁定|限定|指定)(?:为|成)?\s*"
+    r"(?:不变|原样|同一(?:比例|尺寸)?|参考图(?:的)?(?:比例|画幅|外框))?"
+    r")",
+    re.IGNORECASE,
+)
+_OUTPUT_OCCUPANCY_TARGET = (
+    r"(?:(?:整个|整张|总|输出|最终|当前|本次)(?:的)?"
+    r"(?:画面|页面|版面|画幅|画布|画框|成图|成片|图片|图像|版心|图)"
+    r"(?:的)?(?:高度|宽度|面积|横边|纵边|宽边|高边|长边|短边)?)"
+)
+OUTPUT_SUBJECT_OCCUPANCY_RE = re.compile(
+    rf"{_OCCUPANCY_SUBJECT}(?:的)?(?:视觉|可见)?(?:高度|宽度|面积|轮廓)?\s*"
+    rf"(?:必须|务必|需要|应当|固定|恒定|锁定|限定|规定)?\s*"
+    rf"(?:占比(?:规定在|限定在|控制在|为|是)?|覆盖率(?:不得低于|不低于|限定为|为|是)?|"
+    rf"约?占(?:据|住)?|占(?:据|住)?|覆盖|填充|填满|铺满|达到|"
+    rf"固定为|锁定为|限定为|控制在|控制为|为|是)\s*"
+    rf"{_OUTPUT_OCCUPANCY_TARGET}(?:的)?\s*"
+    rf"(?:大约|约)?{_OCCUPANCY_RANGE_VALUE}(?:\s*倍)?"
+)
+HARD_SUBJECT_OCCUPANCY_RE = re.compile(
+    rf"(?:(?:成品|成图|成片|生成结果|画面|画布|画幅|页面|版面)(?:中|内|里)\s*)?"
+    rf"{_OCCUPANCY_SUBJECT}(?:的)?"
+    rf"(?:(?:视觉|可见)?(?:高度|宽度|面积|轮廓)|横向跨度|纵向跨度|覆盖率|占比)?\s*"
+    rf"(?:在(?:整个)?(?:画面|画布|画幅|画框|成图|成片|页面|版面)(?:中|内)?(?:的)?(?:高度|宽度|面积)?\s*)?"
+    rf"(?:所占区域)?\s*"
+    rf"(?:必须|务必|需要|应当|固定|恒定|锁定|限定|规定|只能|一律|不得低于|不得少于|不低于|不超过|至少|至多)?\s*"
+    rf"(?:占比(?:规定在|限定在|控制在|为|是)?|覆盖率(?:不得低于|不低于|限定为|为|是)?|"
+    rf"占(?:据|住)?|覆盖|吞掉|吃掉|铺满|填满|达到|不得少于|不得低于|锁定为|固定为|限定为|规定在|为|是)\s*"
+    rf"(?:(?:整个|整张|总)?(?:画面|画布|画幅|画框|成图|成片|图片|页面|版面|版心|图)"
+    rf"(?:的)?(?:高度|宽度|面积|横边|纵边|宽边|高边|长边|短边)?(?:的)?|画宽(?:的)?|像素区域(?:的)?)?\s*"
+    rf"(?:大约|约)?{_OCCUPANCY_RANGE_VALUE}(?:\s*倍)?(?:的)?(?:空间|区域)?"
+)
+LAYOUT_ZONE_OCCUPANCY_RE = re.compile(
+    rf"(?:安全留空区|安全区(?:域)?|文案(?:空|安全)?区|文案留空|商品区(?:域)?|主体区(?:域)?|留白|空白区(?:域)?)"
+    rf"\s*(?:必须|务必|需要|固定|限定|规定|至少|至多)?\s*"
+    rf"(?:保留|覆盖|占(?:据|住)?|占比|比例|为|是)?\s*"
+    rf"(?:(?:整个|整张|总)?(?:画面|画布|画幅|画框|成图|成片|图片|页面|版面|图)(?:的)?(?:面积)?(?:的)?)?\s*"
+    rf"(?:大约|约)?{_OCCUPANCY_RANGE_VALUE}"
+)
+LAYOUT_REGION_RATIO_RE = re.compile(
+    rf"(?:留白|空白区(?:域)?|安全区(?:域)?|安全留空区|文案(?:空|安全)?区|文案留空|商品区(?:域)?|主体区(?:域)?|{_OCCUPANCY_SUBJECT})"
+    rf"\s*(?:与|和|对)\s*"
+    rf"(?:留白|空白区(?:域)?|安全区(?:域)?|安全留空区|文案(?:空|安全)?区|文案留空|商品区(?:域)?|主体区(?:域)?|{_OCCUPANCY_SUBJECT})"
+    rf"\s*(?:各自)?(?:之)?(?:比例|比|各占)?\s*"
+    rf"(?:{_OCCUPANCY_VALUE}|{_NUMBER}\s*(?::|∶|比)\s*{_NUMBER})"
+)
+LAYOUT_REGION_ALLOCATION_RE = re.compile(
+    rf"(?:留白|空白区(?:域)?|安全区(?:域)?|安全留空区|文案(?:空|安全)?区|文案留空|商品区(?:域)?|主体区(?:域)?|{_OCCUPANCY_SUBJECT})"
+    rf"\s*(?:与|和|对)\s*"
+    rf"(?:留白|空白区(?:域)?|安全区(?:域)?|安全留空区|文案(?:空|安全)?区|文案留空|商品区(?:域)?|主体区(?:域)?|{_OCCUPANCY_SUBJECT})"
+    rf"\s*(?:按(?:照)?)?\s*{_PART_VALUE}\s*(?:对|配|比|和|与)\s*{_PART_VALUE}(?:分配|配比|比例)?"
+)
+
+REFERENCE_SOURCE_RE = re.compile(
+    r"(?:参考图(?:片)?|参考照片|参考底稿|底稿|样图|样片|样张|样板|参考视觉|参考素材|输入(?:图|图片|照片|影像)|"
+    r"输入(?=[^，。；\n]{0,8}(?:横|竖|宽|高|比例|画幅|尺寸|方向))|"
+    r"原图|原照片|原始(?:图片|图像|照片|影像)|原素材|上传图|上传照片|上传素材|素材图|源图|源照片|源素材|来图|来稿|底图|底片|素材)"
+)
+REFERENCE_PRONOUN_RE = re.compile(
+    r"(?:(?:该|此)(?:素材|图片|图像)|它|其|与之|依此|据此|前者|后者|"
+    r"(?:同样|一样|相同|同一|原样|原有)(?=(?:的)?(?:方向|比例|尺寸|画幅|外框|边框|宽高|长宽|横竖|横纵)))"
+)
+REFERENCE_RELATION_RE = re.compile(
+    r"(?:锁定|锁死|承袭|保有|保留|定(?:为|成)|等比例|沿用|沿着|沿|延续|继承|沿袭|套用|套到|照搬|搬到|移植|复用|听从|听|跟随|跟|遵循|"
+    r"复刻|复制|照抄|照着|照旧|照(?!片)|原样|随|使用|带入|用作|"
+    r"按(?:照)?|参照|依(?:照)?|根据|匹配|保持|维持|同步|取自|来自|源自|"
+    r"等于|决定|取决于|为准|确定|一样|一致|相同|同宽同高|作为|模板|约束|走|就|也|仍)"
+)
+_OUTPUT_REBIND_RELATION = (
+    r"(?:沿用|继承|采用|使用|固定为|固定成|锁定为|锁成|保持|维持|"
+    r"按(?:照)?|套用|参照|匹配|跟随|取自)"
+)
+_OUTPUT_REBIND_METRIC = (
+    r"(?:(?:该|此|同(?:一)?|相同|一样|上述|前述|其|原样)(?:的)?)"
+    r"(?:分辨率|尺寸|比例|方向|规格|宽高关系|长宽关系|横竖关系)"
+)
+OUTPUT_REBIND_PATTERNS = (
+    re.compile(
+        rf"{_OUTPUT_OBJECT}[^，。！？!?；;\n]{{0,12}}"
+        rf"(?P<relation>{_OUTPUT_REBIND_RELATION})[^，。！？!?；;\n]{{0,10}}"
+        rf"{_OUTPUT_REBIND_METRIC}",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"(?P<relation>{_OUTPUT_REBIND_RELATION})[^，。！？!?；;\n]{{0,10}}"
+        rf"{_OUTPUT_REBIND_METRIC}[^，。！？!?；;\n]{{0,12}}"
+        rf"(?:作为|用于|给|到|至)?[^，。！？!?；;\n]{{0,4}}{_OUTPUT_OBJECT}",
+        re.IGNORECASE,
+    ),
+)
+OUTPUT_REBIND_DISCLAIMER_RE = re.compile(
+    r"(?:不同于|有别于|无关|不一致|相反|不等同于|不等于|不取自|不依赖)"
+)
+REFERENCE_FRAME_RE = re.compile(
+    r"(?:画布|画幅|画框|外框|边框|边框轮廓|边界(?:形态)?|裁切边界|裁切框|边长关系|外轮廓(?:比例)?|外形|形状|版式(?:比例)?|版心(?:比例)?|"
+    r"画面(?:比例|宽高|长宽|横竖|尺寸|分辨率|方向)?|"
+    r"成图(?:比例|宽高|长宽|横竖|尺寸|分辨率|方向)?|"
+    r"输出(?:比例|宽高|长宽|横竖|尺寸|分辨率|方向)?|"
+    r"主图比例|尺寸|分辨率|方向|宽高比|高宽比|长宽比|宽高关系|长宽关系|"
+    r"横竖关系|横纵关系|横竖比例|横纵比例|横竖尺寸关系|横纵尺度|长短边(?:关系)?|横版方向|竖版方向|"
+    r"横版|竖版|横屏|竖屏|横图|竖图|横构图|竖构图|方幅|同宽同高|多宽多高|几比几|同样关系|长宽|宽高|横竖|横纵|"
+    r"横向(?!纹理|肌理|图案|线条|结构|排列|延展|移动)|"
+    r"纵向(?!纹理|肌理|图案|线条|结构|排列|延展|移动)|同样比例|比例|一样)"
+)
+SEMANTIC_BREAK_RE = re.compile(
+    r"(?:[，。！？；\n]+|但|不过|然而|可是|同时|并且|以及|而且|且|并(?!不|未|非)|或(?:者)?)"
+)
+NEGATION_RE = re.compile(
+    r"(?:请勿|切勿|不一定|不要求|不应|不需要|没有必要|不必|不需|不要|不得|不能|不可|不再|不把|不将|不让|不强制|"
+    r"不限定|不锁定|不锁成|不固定|不采用|不使用|不输出|不生成|不制作|不导出|不保持|不继承|"
+    r"不沿用|不匹配|不根据|不按照|不按|不作为|不决定|不占|无须|无需|禁止|避免|拒绝|未|"
+    r"没有|并非|不是|不)"
+)
 
 HEADING_RE = re.compile(
     r"^## 第(?P<page>\d+)张（(?P<storyboard_id>[A-Za-z0-9\u4e00-\u9fff]+-\d{2,})）：(?P<title>\S.*)$",
@@ -819,6 +1153,1191 @@ def _normalize_security_text(text: str) -> str:
         for character in normalized
         if unicodedata.category(character) not in {"Cf", "Mn", "Mc", "Me"}
     )
+
+
+def _strong_clauses(text: str) -> list[str]:
+    """按完整语义句切分；保留逗号，供宽高成对规格识别。"""
+
+    return [part.strip() for part in re.split(r"[。！？!?；;\n]+", text) if part.strip()]
+
+
+def _scope_prefix(text: str, start: int) -> str:
+    """取得当前谓词前、最近转折或并列边界后的局部作用域。"""
+
+    prefix = text[:start]
+    boundary = 0
+    for match in SEMANTIC_BREAK_RE.finditer(prefix):
+        boundary = match.end()
+    return prefix[boundary:].strip()
+
+
+def _is_directly_negated(text: str, start: int) -> bool:
+    """只让紧邻目标谓词的否定生效，避免无关的“不改变商品”掩盖后续约束。"""
+
+    prefix = _scope_prefix(text, start)
+    if re.search(
+        r"(?:并非|并不是|不是|不再|未曾|没有)\s*"
+        r"(?:不|未|无须|无需|拒绝|禁止|排除|取消|否决)[^，。！？!?；;\n]{0,28}$",
+        prefix,
+    ):
+        return False
+    matches = list(NEGATION_RE.finditer(prefix))
+    if not matches:
+        return False
+    after = prefix[matches[-1].end() :].strip()
+    after = re.sub(r"^(?:非得|一定要|一定|必须|只能|务必)\s*", "", after)
+    after = re.sub(r"^(?:会|再|继续|仍|仍然)\s*", "", after)
+    if len(after) > 36:
+        return False
+    if re.search(r"(?:改变|更改|修改|补画|增减|替换|复制文字|改变颜色|改变结构)", after):
+        return False
+    if matches[-1].group(0) in {"禁止", "避免", "拒绝"} and re.match(r"用", after):
+        return True
+    if after in {"把", "将", "让", "为", "成", "在", "到", "达到"}:
+        return True
+    if re.fullmatch(
+        r"(?:把|将)[^，。！？!?；;\n]{0,24}(?:当作|视为|作为)"
+        r"(?:当前|本次)?(?:成图|输出|画面|画布|画幅|图片)?(?:的)?(?:硬性?|强制)?",
+        after,
+    ):
+        return True
+    if not re.search(
+        r"(?:设为|设置为|固定为|限定为|锁定为|控制为|规定为|作为|视为)$",
+        after,
+    ):
+        after = re.sub(r"(?:达到|为|在|到)$", "", after).strip()
+    if not after:
+        return True
+    return bool(
+        re.search(
+            r"(?:按(?:照)?|采用|使用|要求|强制|限定|锁定|锁成|设为|设成|设置为|"
+            r"固定|固定为|固定成|保持|维持|沿用|继承|套用|参照|根据|匹配|取自|作为|决定|"
+            r"做成|制成|输出|生成|制作|导出|预设|占据?|填充|填满|铺满|覆盖|让|将|把)$",
+            after,
+        )
+        or re.fullmatch(
+            r"(?:(?:把|将|让)?(?:成图|出图|输出|画面|画布|画幅|版式|外框|主图|图片|"
+            r"比例|宽高比|高宽比|长宽比|尺寸|分辨率|参考图|输入图|原图|该素材|此素材|"
+            r"参考素材|素材|源图|底图|它|其|商品|产品|货品|主体|横版|竖版|方图|正方形|相同|同样|一致|的|与|和)"
+            r"*(?:按(?:照)?|采用|使用|要求|强制|限定|锁定|锁成|设为|设成|设置为|"
+            r"固定|固定为|固定成|保持|维持|沿用|继承|套用|参照|根据|匹配|取自|作为|决定|"
+            r"做成|制成|输出|生成|制作|导出|预设|占据?|填充|填满|铺满|覆盖)?)",
+            after,
+        )
+    )
+
+
+def _claim_is_negated_or_retracted(text: str, start: int, end: int) -> bool:
+    """判断当前候选约束是否被明确否定、撤回，或被改判为非输出事实。"""
+
+    directly_negated = _is_directly_negated(text, start)
+
+    right_candidates = [
+        position
+        for mark in ("。", "！", "？", "!", "?", "；", ";", "\n")
+        if (position := text.find(mark, end)) >= 0
+    ]
+    right = min(right_candidates) if right_candidates else len(text)
+    suffix = text[end:right]
+
+    asserted_events: list[int] = []
+    retracted_events: list[int] = []
+    for pattern in (
+        r"(?:但|不过|然而|可是|却)[^，。！？!?；;\n]{0,12}"
+        r"(?:当前|现在|实际|重新|恢复|仍|依然|继续)[^，。！？!?；;\n]{0,12}"
+        r"(?:采用|使用|执行|恢复|改用|固定|限定|约束|按(?:照)?|沿用|继承|保持)",
+        r"(?:当前|现在|实际|本次)(?:图片|画面|构图|输出)?[^，。！？!?；;\n]{0,8}"
+        r"(?:固定|采用|使用|沿用|继承|执行|保持)",
+    ):
+        asserted_events.extend(match.start() for match in re.finditer(pattern, suffix))
+
+    retraction_patterns = (
+        r"(?:的)?(?:输出|成图|画面|画幅)?(?:比例|规格)?(?:的)?"
+        r"(?:方案|设定|约束|规格)?\s*(?:已|已经|现已|当前已|此前|曾)?(?:被)?"
+        r"(?:否决|取消|弃用|废弃|排除|作废)",
+        r"(?:仅|只是|仅仅)[^，。！？!?；;\n]{0,12}(?:说明)?(?:被)?"
+        r"(?:否决|取消|弃用|废弃|排除|作废)(?:的)?(?:旧|原|备选)?(?:方案|设定|约束)?",
+        r"(?:并非|不是|不属于)\s*(?:当前)?(?:硬性)?(?:要求|约束|设定|方案|规格)",
+        r"(?:并非|并不是|不是)\s*(?:当前|本次|本张)?(?:输出|成图|画面|画布|画幅|图片)?"
+        r"(?:比例|规格|约束|尺寸|方向)",
+        r"(?:已|已经|现已)?\s*改为[^，。！？!?；;\n]{0,12}(?:自主|自行|系统|AI|模型|智能)",
+        r"(?:不再|不|未)(?:作为|用作|构成|属于|继承|沿用|跟随|保持|采用|使用|输出|生成|固定|限定|锁定|约束)"
+        r"[^，。！？!?；;\n]{0,18}(?:当前)?(?:输出|成图|画面|构图|画布|画幅|外框|边框|规格|约束|比例|尺寸|方向)",
+        r"(?:输出|成图|画面|画幅)?[^，。！？!?；;\n]{0,6}(?:不|未)(?:跟随|沿用|继承|采用|使用)",
+    )
+    for pattern in retraction_patterns:
+        for match in re.finditer(pattern, suffix):
+            bridge = suffix[: match.start()]
+            if (
+                FRAME_RATIO_RE.search(bridge)
+                or DIMENSION_PAIR_RE.search(bridge)
+                or PAPER_FORMAT_RE.search(bridge)
+            ):
+                continue
+            retracted_events.append(match.start())
+
+    last_asserted = max(asserted_events, default=-1)
+    last_retracted = max(retracted_events, default=-1)
+    if last_asserted >= 0 and last_asserted > last_retracted:
+        return False
+    if last_retracted >= 0:
+        return True
+    return directly_negated
+
+
+def _is_deferred_delivery_spec(text: str, start: int, end: int) -> bool:
+    """只豁免明确属于生产/后期且明确不约束当前构图的规格。"""
+
+    candidate_phrase = _local_phrase(text, start, end)
+    if re.search(
+        r"(?:当前|本次)(?:构图|画面|画幅|输出|生成)[^，。！？!?；;\n]{0,12}"
+        r"(?:采用|使用|执行|固定|限定|锁定|按(?:照)?|保持|沿用|继承)",
+        candidate_phrase,
+    ):
+        return False
+
+    window = text
+    has_deferred_owner = bool(
+        re.search(
+            r"(?:只|仅)?(?:属于|用于|作为|写入|放在|归入|在)?[^，。！？!?；;\n]{0,8}"
+            r"(?:生产与后期|生产|后期(?:交付)?|交付端|平台交付|最终交付|导出时|导出适配|最终导出|"
+            r"平台成品|后期裁切|交付裁切)(?:规格|要求|适配|裁切)?",
+            window,
+        )
+        or re.search(
+            r"(?:生产与后期|生产|后期(?:交付)?|交付端|平台交付|最终交付|导出时|导出适配|最终导出|"
+            r"平台成品|后期裁切|交付裁切)(?:规格|要求|适配|裁切)",
+            window,
+        )
+    )
+    if not has_deferred_owner:
+        return False
+    nonbinding = re.search(
+        r"(?:不约束|不决定|不影响|不限制|不用于|不作为|不锁定|不锁)"
+        r"[^，。！？!?；;\n]{0,14}(?:当前|本次)?(?:构图|画面|画幅|输出|生成)|"
+        r"(?:当前|本次)?(?:构图|画面|画幅|输出|生成)[^，。！？!?；;\n]{0,10}"
+        r"(?:不受影响|无关|自由|自主|保持自适应|另行决定)|"
+        r"(?:构图|生成)阶段[^，。！？!?；;\n]{0,8}(?:自由|自主|不锁定|不锁画幅|不受影响)|"
+        r"与(?:当前|本次)?(?:构图|画面|画幅|输出|生成)无关|"
+        r"仅用于(?:最终)?(?:后期|导出|交付)",
+        window,
+    )
+    if not nonbinding:
+        return False
+    return not bool(
+        re.search(
+            r"(?:但|不过|然而|可是|却)[^，。！？!?；;\n]{0,16}"
+            r"(?:当前|现在|实际|重新|仍|也)?[^，。；\n]{0,8}"
+            r"(?:采用|使用|执行|固定|限定|约束|按(?:照)?|沿用|继承|保持)",
+            window[nonbinding.end() :],
+        )
+    )
+
+
+def _local_phrase(clause: str, start: int, end: int) -> str:
+    """取得当前规格所在的局部短语，避免逗号后的“商品居中”反向修饰前面的画幅。"""
+
+    left = max(clause.rfind(mark, 0, start) for mark in ("，", ",", "；", ";", "。")) + 1
+    right_candidates = [
+        position
+        for mark in ("，", ",", "；", ";", "。")
+        if (position := clause.find(mark, end)) >= 0
+    ]
+    right = min(right_candidates) if right_candidates else len(clause)
+    return clause[left:right].strip()
+
+
+def _span_targets_output(clause: str, start: int, end: int) -> bool:
+    """统一判断当前几何规格是否绑定输出对象，而不是参考来源或商品本体。"""
+
+    phrase = REFERENCE_SOURCE_RE.sub("", _local_phrase(clause, start, end))
+    return bool(OUTPUT_OBJECT_RE.search(phrase))
+
+
+def _has_product_marker(text: str) -> bool:
+    """识别稳定的商品事实语义，不依赖具体行业品类清单。"""
+
+    return bool(
+        re.search(
+            r"(?:商品|产品|货品|实物|包装(?:盒)?|外盒|纸箱|本体|画布包|机身|盒体|"
+            r"杯身|瓶身|罐体|相框|床垫|沙发|折叠桌|打印纸|纸张|屏幕|显示屏|显示器|屏显|"
+            r"电视屏|点阵屏|面板|投影仪|显示模组|电子墨水|墨水屏|摄像头|相机|"
+            r"图案|标签|应用|接口|传感器|套装)",
+            text,
+        )
+    )
+
+
+def _output_governs_metric(clause: str, metric_start: int) -> bool:
+    """判断几何词描述的是输出外框，而不是商品自身。"""
+
+    phrase = _local_phrase(clause, metric_start, metric_start)
+    if _has_product_marker(phrase):
+        return False
+    return _span_targets_output(clause, metric_start, metric_start)
+
+
+def _reference_directly_governs_metric(clause: str, metric_start: int) -> bool:
+    """区分“参考图的宽高比”与“参考图显示的商品高宽比”。"""
+
+    prefix = clause[max(0, metric_start - 18) : metric_start]
+    references = list(REFERENCE_SOURCE_RE.finditer(prefix))
+    if not references:
+        return False
+    before_reference = prefix[: references[-1].start()]
+    if re.search(
+        r"(?:按(?:照)?|沿用|继承|套用|照搬|匹配|保持|维持|同步|跟随|跟)\s*$",
+        before_reference,
+    ):
+        return False
+    after_reference = prefix[references[-1].end() :]
+    if re.search(r"(?:显示|表明|可见|中的?|里的?)[^，。；\n]{1,10}$", after_reference):
+        return False
+    return bool(
+        re.fullmatch(
+            r"\s*(?:(?:相同|一致|同样|原始|原有)(?:的)?|的|自身|本身)?"
+            r"(?:外框|画幅|边框|比例|宽高比|高宽比|长宽比|纵横比)?"
+            r"(?:为|是|记录为|记录(?:的)?是)?\s*",
+            after_reference,
+        )
+    )
+
+
+def _has_product_geometry_metric(clause: str, start: int, end: int) -> bool:
+    """识别商品几何事实；依赖语义指标，不维护商品品类白名单。"""
+
+    phrase = _local_phrase(clause, start, end)
+    if _has_product_marker(phrase):
+        return True
+    target = clause[start:end]
+    local_start = phrase.find(target)
+    if local_start < 0:
+        local_start = 0
+    local_end = local_start + len(target)
+
+    def has_product_noun(governor: str) -> bool:
+        governor = FRAME_RATIO_RE.sub("", governor)
+        governor = re.sub(r"(?:约为|为|是|呈|约)\s*$", "", governor).strip()
+        noun = re.search(r"([\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9]{0,15})(?:的)?$", governor)
+        if not noun:
+            return False
+        noun_text = noun.group(1)
+        if OUTPUT_OBJECT_RE.search(noun_text) or REFERENCE_SOURCE_RE.fullmatch(noun_text):
+            return False
+        if re.search(
+            r"(?:构图|布局|版式|画面|画布|画幅|画框|成图|成片|输出|导出|交付)",
+            noun_text,
+        ):
+            return False
+        if re.search(
+            r"(?:建议|默认|优先|至少|至多|范围|关系|比例|宽|高|长|横竖|横纵|"
+            r"构图|排版|采用|使用|生成|输出|锁为|锁死|控制|限定|调整|方案|规格|"
+            r"后期|交付|平台|适配|生产|固定)$",
+            noun_text,
+        ):
+            return False
+        return True
+
+    for metric in re.finditer(_GEOMETRY_METRIC, phrase):
+        distance = min(abs(metric.start() - local_end), abs(local_start - metric.end()))
+        if metric.start() <= local_end and metric.end() >= local_start:
+            distance = 0
+        if distance > 18:
+            continue
+        if _output_governs_metric(phrase, metric.start()):
+            continue
+        if _reference_directly_governs_metric(phrase, metric.start()):
+            continue
+        if has_product_noun(phrase[: metric.start()]):
+            return True
+
+    # 未知品类也可由“名词 + 几何指标”表达商品事实，不维护行业白名单。
+    for metric in re.finditer(r"(?:比例|长宽|宽高|高宽)", phrase):
+        distance = min(abs(metric.start() - local_end), abs(local_start - metric.end()))
+        if distance > 12:
+            continue
+        if has_product_noun(phrase[: metric.start()]):
+            return True
+
+    prefix = phrase[:local_start]
+    if not re.search(r"(?:约为|为|是|呈|约)\s*$", prefix):
+        return False
+    if re.search(_GEOMETRY_METRIC, prefix):
+        return False
+    stripped = REFERENCE_SOURCE_RE.sub("", prefix)
+    return has_product_noun(stripped)
+
+
+def _is_non_canvas_parameter(clause: str, start: int, end: int) -> bool:
+    window = clause[max(0, start - 20) : min(len(clause), end + 20)]
+    return bool(
+        re.search(
+            r"(?:俯视角|仰视角|侧视角|侧后方机位|侧面机位|拍摄角度|机位|螺纹接口|传感器|放大倍率|"
+            r"视频(?:分辨率)?|镜头|焦距|光圈|快门|ISO|白平衡|色温|曝光(?:补偿)?|EV)|"
+            r"(?:数量|材料|成分|配方|SKU)[^，。；\n]{0,8}(?:关系|比例|数量比|配比)",
+            window,
+        )
+    )
+
+
+def _has_named_product_metric(clause: str, match: re.Match[str]) -> bool:
+    """识别未知品类的“物理指标A与指标B之比”，排除纯画幅轴。"""
+
+    phrase = _local_phrase(clause, match.start(), match.end())
+    local_match_start = phrase.find(match.group(0))
+    if local_match_start < 0:
+        return False
+    prefix = phrase[:local_match_start].strip()
+    named = re.search(
+        r"(?P<left>[\u4e00-\u9fffA-Za-z]{1,12})(?:与|和|对)"
+        r"(?P<right>[\u4e00-\u9fffA-Za-z]{1,10})(?:之)?比\s*$",
+        prefix,
+    )
+    if not named or OUTPUT_OBJECT_RE.search(prefix) or REFERENCE_SOURCE_RE.search(prefix):
+        return False
+    layout_regions = re.compile(
+        r"(?:留白|空白区(?:域)?|安全区(?:域)?|文案(?:空|安全)?区|商品区|主体区|主体|版面|画面|画布|画幅)"
+    )
+    if layout_regions.fullmatch(named.group("left")) or layout_regions.fullmatch(
+        named.group("right")
+    ):
+        return False
+    pure_axis = re.compile(
+        r"(?:宽|宽度|宽边|高|高度|高边|横边|纵边|长|长度|长边|短边)"
+    )
+    return not (
+        pure_axis.fullmatch(named.group("left"))
+        and pure_axis.fullmatch(named.group("right"))
+    )
+
+
+def _has_explicit_product_ratio_owner(clause: str, match: re.Match[str]) -> bool:
+    """允许“画面中保持商品自身比例”，但不让商品词掩盖输出比例。"""
+
+    phrase = _local_phrase(clause, match.start(), match.end())
+    local_match_start = phrase.find(match.group(0))
+    if local_match_start < 0:
+        return False
+    prefix = phrase[:local_match_start]
+    return bool(
+        re.search(
+            r"(?:商品|产品|货品|实物|包装(?:盒)?|外盒|纸箱|本体|机身|盒体|杯身|瓶身|罐体|"
+            r"相框|床垫|沙发|折叠桌|画布本体|画布包)"
+            r"(?:自身|本身|真实|原有|原始)?(?:的)?[^，。；\n]{0,12}"
+            r"(?:高宽比|宽高比|长宽比|纵横比|高宽比例|宽高比例|长宽比例|真实比例|外形比例|几何比例|原生比例|比例)\s*$",
+            prefix,
+        )
+    )
+
+
+def _has_current_output_rebinding(clause: str, start: int, end: int) -> bool:
+    """商品、来源或设备事实若被后置回指绑定当前输出，仍按输出硬约束处理。"""
+
+    suffix = clause[end:]
+    for pattern in OUTPUT_REBIND_PATTERNS:
+        for match in pattern.finditer(suffix):
+            disclaimer_window = suffix[
+                match.start("relation") : min(len(suffix), match.end() + 16)
+            ]
+            if any(
+                not _is_directly_negated(disclaimer_window, disclaimer.start())
+                for disclaimer in OUTPUT_REBIND_DISCLAIMER_RE.finditer(
+                    disclaimer_window
+                )
+            ):
+                continue
+            absolute_start = end + match.start("relation")
+            absolute_end = end + match.end("relation")
+            if not _claim_is_negated_or_retracted(
+                clause, absolute_start, absolute_end
+            ):
+                return True
+    return False
+
+
+def _is_product_ratio(clause: str, match: re.Match[str]) -> bool:
+    phrase = _local_phrase(clause, match.start(), match.end())
+    if _has_current_output_rebinding(clause, match.start(), match.end()):
+        return False
+    if _reference_directly_governs_metric(clause, match.start()):
+        return True
+    if _has_explicit_product_ratio_owner(clause, match):
+        return True
+    if _span_targets_output(clause, match.start(), match.end()):
+        return False
+    if _has_named_product_metric(clause, match):
+        return True
+    if _is_non_canvas_parameter(clause, match.start(), match.end()):
+        return True
+    if _has_product_marker(phrase):
+        return True
+    prefix = phrase[: max(0, phrase.find(match.group(0)))].strip()
+    if (
+        re.match(r"(?:长|长度|长边|宽|宽度|宽边|高|高度|高边)", match.group(0))
+        and not _span_targets_output(clause, match.start(), match.end())
+        and re.search(
+            r"[\u4e00-\u9fffA-Za-z]{1,10}(?:本体)?(?:展开后|折叠后|展开时|收起后|开启后|闭合后)\s*$",
+            prefix,
+        )
+        and not re.search(
+            r"(?:构图|布局|版式|页面|画面|画布|画幅|画框|成图|成片|输出|导出|交付)\s*$",
+            prefix,
+        )
+    ):
+        return True
+    return _has_product_geometry_metric(clause, match.start(), match.end())
+
+
+def _has_canvas_output_governor(clause: str, start: int) -> bool:
+    return _span_targets_output(clause, start, start)
+
+
+def _is_product_dimension(clause: str, match: re.Match[str]) -> bool:
+    """允许真实物理尺寸、显示设备参数和视频规格，不允许通用商品像素框。"""
+
+    window = _local_phrase(clause, match.start(), match.end())
+    if _has_current_output_rebinding(clause, match.start(), match.end()):
+        return False
+
+    if re.search(
+        r"(?:镜头|焦距|光圈|快门|ISO|白平衡|色温|曝光(?:补偿)?|EV)",
+        window,
+        re.IGNORECASE,
+    ):
+        return True
+
+    if match.re is RESOLUTION_CLASS_RE and re.search(
+        r"(?:商品|产品)(?:名称|型号|机型|款式)|(?:型号|机型|SKU)\s*[：:]",
+        window,
+        re.IGNORECASE,
+    ):
+        return True
+
+    if re.search(
+        r"(?:相机|摄像头|像素位移|裁切模式|拍摄模式)[^，。！？!?；;\n]{0,28}"
+        r"(?:采集|记录|拍摄|源文件|原始文件|RAW)|"
+        r"(?:采集|记录|拍摄)[^，。！？!?；;\n]{0,18}(?:源文件|原始文件|RAW)",
+        window,
+        re.IGNORECASE,
+    ):
+        return True
+
+    if REFERENCE_SOURCE_RE.search(window):
+        explicit_current_binding = re.search(
+            r"(?:生成|制作|导出|交付|当前输出|本次输出|作为成图|用于成图)"
+            r"[^，。！？!?；;\n]{0,16}",
+            window,
+        )
+        if not explicit_current_binding:
+            return True
+
+    device = (
+        r"(?:设备|屏幕|显示屏|显示器|屏显|电视屏|点阵屏|面板|投影仪|显示模组|"
+        r"电子墨水|墨水屏|摄像头|相机)"
+    )
+    hardware_fact = bool(
+        re.search(device, window)
+        and re.search(
+            r"(?:原生|真实|物理)(?:显示)?(?:像素|像素矩阵|分辨率)|"
+            r"(?:像素|像素矩阵|分辨率)(?:为|是)?(?:原生|真实|物理)",
+            window,
+        )
+    )
+    device_subject_output = False
+    for device_match in re.finditer(device, window):
+        before_device = window[max(0, device_match.start() - 4) : device_match.start()]
+        after_device = window[device_match.end() :]
+        if re.search(r"(?:为|给|适配)\s*$", before_device):
+            continue
+        device_capability = bool(
+            re.search(
+                r"^[^，。！？!?；;\n]{0,8}(?:支持|可)?输出(?:宽|高|尺寸|分辨率|像素)",
+                after_device,
+            )
+            or re.search(
+                rf"^[^，。！？!?；;\n]{{0,6}}(?:支持|可|能够|最高可)"
+                rf"(?:输出|拍摄|记录)[^，。！？!?；;\n]{{0,8}}{_DIMENSION_NUMBER}",
+                after_device,
+            )
+        )
+        if device_capability and not re.search(
+            r"(?:固定|锁定|作为本次|本次成图|当前图片|当前画面)",
+            after_device,
+        ):
+            device_subject_output = True
+            break
+    if (
+        _span_targets_output(clause, match.start(), match.end())
+        and not hardware_fact
+        and not device_subject_output
+    ):
+        return False
+
+    display_or_video = re.search(
+        r"(?:屏幕|显示屏|显示器|屏显|电视屏|点阵屏|面板|投影仪|显示模组|电子墨水|墨水屏|摄像头|相机)"
+        r"[^，。；\n]{0,28}(?:原生|真实像素|物理像素|像素矩阵|分辨率|视频|宽|高|支持|输出)|"
+        r"(?:原生|分辨率|视频|宽|高|支持|输出)[^，。；\n]{0,24}"
+        r"(?:屏幕|显示屏|显示器|屏显|电视屏|点阵屏|面板|投影仪|显示模组|电子墨水|墨水屏|摄像头|相机)|"
+        r"(?:像素)?的(?:屏幕|显示屏)|视频",
+        window,
+    )
+    if hardware_fact or display_or_video:
+        return True
+
+    if re.search(
+        r"(?:原生(?:显示)?分辨率|原生像素(?:矩阵)?|真实像素(?:矩阵)?|物理分辨率)",
+        window,
+    ) and not _span_targets_output(clause, match.start(), match.end()):
+        return True
+
+    if _span_targets_output(clause, match.start(), match.end()) and not _has_product_marker(window):
+        return False
+    physical_unit = re.search(
+        r"(?:毫米|厘米|mm|cm|英寸)|(?:\d|[零〇一二三四五六七八九十百千万两])\s*寸",
+        match.group(0),
+        re.IGNORECASE,
+    )
+    if physical_unit and not _has_canvas_output_governor(clause, match.start()):
+        return True
+    if _has_product_marker(window) and re.search(
+        r"(?:尺寸|规格|长宽高|长宽|宽高|包装|本体|原生|分辨率)", window
+    ):
+        return True
+    return False
+
+
+def _is_product_density(clause: str, match: re.Match[str]) -> bool:
+    """允许设备自身打印/扫描密度，不允许把密度写成当前成图规格。"""
+
+    if _has_current_output_rebinding(clause, match.start(), match.end()):
+        return False
+    if _span_targets_output(clause, match.start(), match.end()):
+        return False
+    window = _local_phrase(clause, match.start(), match.end())
+    return bool(
+        re.search(r"(?:打印机|扫描仪|相机|摄像头|设备)", window)
+        and (
+            re.search(r"(?:原生|打印|扫描|拍摄|支持)[^，。！？!?；;\n]{0,12}(?:分辨率|密度)", window)
+            or re.search(r"(?:原生|支持|可|能够|最高可)[^，。！？!?；;\n]{0,12}(?:DPI|PPI|点每英寸)", window, re.IGNORECASE)
+        )
+    )
+
+
+def _has_output_context(clause: str, start: int, end: int) -> bool:
+    window = _local_phrase(clause, start, end)
+    return bool(
+        _span_targets_output(clause, start, end)
+        or re.search(
+            r"(?:生成|制作|采用|使用|按(?:照)?|排版|组织留白|"
+            r"安全区|裁切|适配|高清图)",
+            window,
+        )
+    )
+
+
+def _contains_subject_occupancy(text: str) -> bool:
+    for pattern in (
+        OUTPUT_SUBJECT_OCCUPANCY_RE,
+        SUBJECT_OCCUPANCY_RE,
+        NATURAL_SUBJECT_OCCUPANCY_RE,
+        HARD_SUBJECT_OCCUPANCY_RE,
+        LAYOUT_ZONE_OCCUPANCY_RE,
+        LAYOUT_REGION_RATIO_RE,
+        LAYOUT_REGION_ALLOCATION_RE,
+    ):
+        for match in pattern.finditer(text):
+            relation = re.search(
+                r"(?:占比|占到|占据?|占住|填充|填满|铺满|铺占|铺到|吃掉|盖住|覆盖|限定在|控制在|控制为|"
+                r"限制在|固定成|固定为|比例|达到|压在|不得低于|不低于|不超过|至多|至少|"
+                r"交给|留给|留作|留出|用作|作为|保留|到)",
+                match.group(0),
+            )
+            relation_start = match.start() + (relation.start() if relation else 0)
+            if _claim_is_negated_or_retracted(text, relation_start, match.end()):
+                continue
+            return True
+    return False
+
+
+def _is_product_reference_fact(clause: str) -> bool:
+    if not REFERENCE_SOURCE_RE.search(clause):
+        return False
+    if _has_product_marker(clause):
+        return True
+    if REFERENCE_FRAME_RE.search(clause) and REFERENCE_RELATION_RE.search(clause):
+        return False
+    for metric in re.finditer(_GEOMETRY_METRIC, clause):
+        if _output_governs_metric(clause, metric.start()):
+            continue
+        if _reference_directly_governs_metric(clause, metric.start()):
+            continue
+        return True
+
+    for metric in re.finditer(r"(?:比例|长宽|宽高|高宽)", clause):
+        governor = clause[max(0, metric.start() - 24) : metric.start()]
+        cleaned = REFERENCE_SOURCE_RE.sub("", governor)
+        cleaned = REFERENCE_RELATION_RE.sub("", cleaned)
+        cleaned = re.sub(
+            r"(?:的|中|里|什么|直接|仅作|用|用于|作为|外轮廓|外框|边框|画幅|版式|"
+            r"和|与|而|不)+",
+            "",
+            cleaned,
+        )
+        noun = re.search(r"([\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9]{1,11})(?:的)?$", cleaned)
+        if not noun:
+            continue
+        noun_text = noun.group(1)
+        if not OUTPUT_OBJECT_RE.search(noun_text) and not re.search(
+            r"(?:同样|一样|横竖|横向|纵向|方向|生成|输出|排版|照着|照|依|按)$", noun_text
+        ):
+            return True
+    return False
+
+
+def _has_autonomous_frame_decision(text: str) -> bool:
+    """识别由系统或任务条件驱动的开放式构图决定。"""
+
+    target = (
+        r"(?:画面|构图|布局|版式|画幅|画布|画框|外框|空间|留白|主体尺度|"
+        r"方向|横竖方向|横纵方向|横版|竖版|横屏|竖屏|横图|竖图|方图|正方形)"
+    )
+    criteria = (
+        r"(?:商品(?:特征|结构|形态)?|图片任务|首屏任务|买家问题|使用场景|场景|"
+        r"输出(?:位置|用途)?|信息(?:层级|动线)|内容(?:层级)?|证据|裁切风险|"
+        r"阅读(?:场景|距离|动线)?|平台(?:位置|入口)?|安全区)"
+    )
+    action = r"(?:决定|判断|选择|安排|组织|确定)"
+    return bool(
+        re.search(
+            rf"(?:(?:系统|AI|模型|智能).{{0,48}}(?:自主|自行|自动|根据[^，。；\n]{{0,12}}|"
+            rf"依据[^，。；\n]{{0,12}}|判断).{{0,36}}{target}|"
+            rf"{target}.{{0,48}}(?:由|交给)?(?:系统|AI|模型|智能).{{0,32}}"
+            rf"(?:自主|自行|自动|决定|判断|选择|选)|"
+            rf"(?:自主|自行).{{0,28}}(?:采用|选择|做成|制成)?.{{0,10}}{target}|"
+            rf"{target}[^，。；\n]{{0,16}}由[^，。；\n]{{0,4}}{criteria}"
+            rf"(?:\s*(?:和|与|及|、)\s*{criteria})?[^，。；\n]{{0,8}}(?:共同)?{action}|"
+            rf"{target}[^，。；\n]{{0,12}}按(?:照)?[^，。；\n]{{0,4}}{criteria}"
+            rf"[^，。；\n]{{0,8}}(?:自主|自行|自适应){action}|"
+            rf"(?:系统|AI|模型|智能)[^，。；\n]{{0,12}}(?:根据|依据|结合)"
+            rf"[^，。；\n]{{0,4}}{criteria}[^，。；\n]{{0,12}}{action}{target})",
+            text,
+            re.IGNORECASE,
+        )
+        or (
+            re.search(r"(?:系统|AI|模型|智能)", text, re.IGNORECASE)
+            and re.search(r"(?:自主|自行|自动|由系统|交给系统)", text)
+            and re.search(r"(?:选择|选|决定|确定|判断|安排)", text)
+        )
+    )
+
+
+def _is_reference_frame_fact(clause: str) -> bool:
+    """允许描述参考来源自身外框，不把它误作输出继承指令。"""
+
+    references = list(REFERENCE_SOURCE_RE.finditer(clause))
+    if not references or not REFERENCE_FRAME_RE.search(clause):
+        return False
+    reference = references[-1]
+    without_source = REFERENCE_SOURCE_RE.sub("", clause)
+    if OUTPUT_OBJECT_RE.search(without_source):
+        return False
+    if any(
+        relation.start() < reference.start()
+        for relation in REFERENCE_RELATION_RE.finditer(clause)
+    ):
+        return False
+    suffix = clause[reference.end() :]
+    values = []
+    for pattern in (
+        FRAME_RATIO_RE,
+        DIMENSION_PAIR_RE,
+        PAPER_FORMAT_RE,
+        ORIENTATION_TOKEN_RE,
+    ):
+        values.extend(pattern.finditer(suffix))
+    if not values:
+        return False
+    value = min(values, key=lambda match: match.start())
+    if re.search(
+        r"(?:就|也|仍|直接)?\s*(?:做|制成|制作|生成|输出|出图|出片|排成|排版|构图)",
+        suffix[value.end() :],
+    ):
+        return False
+    prefix = suffix[: value.start()].strip()
+    return bool(
+        re.search(
+            r"(?:采用|使用|带有|具有|呈(?:现)?(?:为)?|记录(?:为|的是)?|"
+            r"显示(?:为|的是)?|(?<!作)(?:为|是))[^，。；\n]{0,6}$",
+            prefix,
+        )
+    )
+
+
+def _only_negated_frame_specs(clause: str) -> bool:
+    """判断当前短句是否只是在撤回具体外框规格。"""
+
+    matches = []
+    for pattern in (
+        FRAME_RATIO_RE,
+        DIMENSION_PAIR_RE,
+        AXIS_DIMENSION_PAIR_RE,
+        PAPER_FORMAT_RE,
+        ORIENTATION_TOKEN_RE,
+    ):
+        matches.extend(pattern.finditer(clause))
+    return bool(matches) and all(
+        _claim_is_negated_or_retracted(clause, match.start(), match.end())
+        for match in matches
+    )
+
+
+def _contains_reference_frame_inheritance(text: str, *, composition_field: bool) -> bool:
+    """只拦截输出外框继承；商品比例取证不属于画幅继承。"""
+
+    reference_seen = False
+    for sentence in _strong_clauses(text):
+        sentence_has_reference = bool(REFERENCE_SOURCE_RE.search(sentence))
+        sentence_has_back_reference = bool(REFERENCE_PRONOUN_RE.search(sentence))
+        if (reference_seen or sentence_has_reference) and re.search(
+            r"(?:画布|画幅|画框|外框|版式|方向|横竖比例|横纵比例|宽高关系|长宽关系)"
+            r"[^，。！？!?；;\n]{0,12}(?:不|未)(?:沿用|继承|采用|使用|跟随|按(?:照)?)"
+            r"[^。！？!?；;\n]{0,18}(?:但|不过|然而|可是|却)"
+            r"[^。！？!?；;\n]{0,12}(?:当前|现在|实际|重新|恢复|仍)"
+            r"[^。！？!?；;\n]{0,8}(?:采用|使用|沿用|继承|恢复|保持)",
+            sentence,
+        ):
+            return True
+        if re.search(
+            r"(?:不得|不能|不可|禁止|务必不要|不允许)改变"
+            r"[^，。！？!?；;\n]{0,18}",
+            sentence,
+        ) and REFERENCE_SOURCE_RE.search(sentence) and REFERENCE_FRAME_RE.search(sentence):
+            return True
+        for raw_clause in SEMANTIC_BREAK_RE.split(sentence):
+            clause = raw_clause.strip()
+            if not clause:
+                continue
+            explicit_reference = bool(
+                REFERENCE_SOURCE_RE.search(clause) or re.search(r"(?:该|此)素材", clause)
+            )
+            frame_hint = bool(REFERENCE_FRAME_RE.search(clause))
+            implied_frame_hint = bool(
+                re.search(
+                    r"(?:画布|画幅|画框|外框|边框|边界|裁切边界|版式|版心|"
+                    r"成图(?:比例|宽高|长宽|横竖|尺寸|分辨率|方向)?|"
+                    r"输出(?:比例|宽高|长宽|横竖|尺寸|分辨率|方向)?|"
+                    r"长宽关系|宽高关系|横竖关系|横纵关系|横竖比例|横纵比例|"
+                    r"横竖尺寸关系|横纵尺度|长短边关系|同宽同高|多宽多高|方向)",
+                    clause,
+                )
+            )
+            relation_hint = bool(REFERENCE_RELATION_RE.search(clause))
+            source_context = explicit_reference or bool(
+                reference_seen
+                and (
+                    REFERENCE_PRONOUN_RE.search(clause)
+                    or (
+                        (
+                            implied_frame_hint
+                            or (frame_hint and OUTPUT_OBJECT_RE.search(clause))
+                        )
+                        and relation_hint
+                        and not _has_product_marker(clause)
+                    )
+                )
+            )
+            if explicit_reference:
+                reference_seen = True
+            if (
+                not source_context
+                or _is_product_reference_fact(clause)
+                or _is_reference_frame_fact(clause)
+                or _only_negated_frame_specs(clause)
+                or _has_autonomous_frame_decision(clause)
+            ):
+                continue
+
+            has_frame = frame_hint
+            conditional_orientation = None
+            if explicit_reference:
+                conditional_orientation = re.search(
+                    r"(?:横|竖)[^，。；\n]{0,8}(?:也|就|仍|则)[^，。；\n]{0,8}"
+                    r"(?:(?:输出|生成|做(?:成)?|制成|排成)[^，。；\n]{0,4})?(?:横|竖)",
+                    clause,
+                )
+            if conditional_orientation:
+                has_frame = True
+            relations = list(REFERENCE_RELATION_RE.finditer(clause))
+            if conditional_orientation:
+                conditional_actions = list(
+                    re.finditer(r"(?:输出|生成|做(?:成)?|制成|排成)", clause)
+                )
+                relations.extend(
+                    conditional_actions
+                    or list(re.finditer(r"(?:也|就|仍|则)", clause))
+                )
+            if composition_field and explicit_reference and re.search(r"照(?:着)?[^，。；\n]{0,8}来", clause):
+                relations.extend(re.finditer(r"照(?:着)?", clause))
+                has_frame = True
+            if re.search(r"什么比例[^，。；\n]{0,8}什么比例", clause):
+                relations.extend(re.finditer(r"生成|输出|出图", clause))
+                has_frame = True
+            if not has_frame:
+                continue
+
+            strong_relations = [
+                candidate
+                for candidate in relations
+                if candidate.group(0) not in {"走", "就", "也", "仍", "相同", "一致", "一样"}
+            ]
+            for relation in relations:
+                if _claim_is_negated_or_retracted(
+                    clause, relation.start(), relation.end()
+                ):
+                    continue
+                if (
+                    relation.group(0) in {"走", "就", "也", "仍", "相同", "一致", "一样"}
+                    and strong_relations
+                    and all(
+                        _is_directly_negated(clause, candidate.start())
+                        for candidate in strong_relations
+                    )
+                ):
+                    continue
+                if relation.group(0) in {"相同", "一致", "一样"}:
+                    governing_relations = [
+                        candidate
+                        for candidate in relations
+                        if candidate.start() < relation.start()
+                        and candidate.group(0) not in {"相同", "一致", "一样"}
+                    ]
+                    if governing_relations and all(
+                        _is_directly_negated(clause, candidate.start())
+                        for candidate in governing_relations
+                    ):
+                        continue
+                if relation.group(0) == "决定" and re.search(
+                    r"(?:自主|自行|另行|重新|由(?:系统|AI|模型|智能)|系统|AI|模型|智能)[^，。；\n]{0,6}决定|"
+                    r"决定[^，。；\n]{0,6}(?:自主|自行|另行|重新|系统|AI|模型|智能)",
+                    clause,
+                    re.IGNORECASE,
+                ):
+                    continue
+                return True
+        if sentence_has_reference:
+            reference_seen = True
+        elif re.search(
+            r"(?:画布|画幅|画框|外框|版式|方向|比例)[^，。！？!?；;\n]{0,16}"
+            r"(?:由|交给)(?:系统|AI|模型|智能)[^，。！？!?；;\n]{0,8}(?:自主|自行|另行)?(?:决定|选择|安排)",
+            sentence,
+            re.IGNORECASE,
+        ):
+            reference_seen = False
+    return False
+
+
+def _is_product_orientation(clause: str, match: re.Match[str]) -> bool:
+    """允许商品本体的横竖属性，不把它误判为输出画幅。"""
+
+    phrase = _local_phrase(clause, match.start(), match.end())
+    window = clause[max(0, match.start() - 36) : min(len(clause), match.end() + 48)]
+    if re.search(
+        r"(?:(?:是|属于|作为)(?:本次)?(?:拍摄|实拍)?(?:的)?(?:商品|产品|实物)|"
+        r"(?:商品|产品|实物)(?:本体)?(?:是|为|采用))",
+        window,
+    ):
+        return True
+    if re.search(
+        r"(?:构图|出图|出片|成图|成片|输出|导出|交付|制作(?:画面|图片|主图|成片)?)",
+        phrase,
+    ):
+        return False
+    if not _has_product_marker(phrase):
+        return False
+    return not _span_targets_output(clause, match.start(), match.end())
+
+
+def _is_reference_orientation_fact(clause: str, match: re.Match[str]) -> bool:
+    """参考来源自身的方向描述不是输出方向；是否继承由独立规则裁决。"""
+
+    phrase = _local_phrase(clause, match.start(), match.end())
+    if not REFERENCE_SOURCE_RE.search(phrase):
+        return False
+    without_source = REFERENCE_SOURCE_RE.sub("", phrase)
+    return not OUTPUT_OBJECT_RE.search(without_source)
+
+
+def _is_product_paper_format(clause: str, match: re.Match[str]) -> bool:
+    """允许作为真实商品或型号事实的纸型，不允许把纸型写成输出画布。"""
+
+    phrase = _local_phrase(clause, match.start(), match.end())
+    window = clause[max(0, match.start() - 32) : min(len(clause), match.end() + 48)]
+    if re.search(
+        r"(?:(?:是|属于|作为)(?:本次)?(?:拍摄|实拍)?(?:的)?(?:商品|产品|实物)|"
+        r"(?:商品|产品)(?:型号|规格|本体)?(?:是|为))",
+        window,
+    ):
+        return True
+    if re.search(
+        r"(?:构图|出图|出片|成图|成片|输出|导出|交付|最终图|画布|画幅|"
+        r"制作(?:画面|图片|主图|成片)?)",
+        phrase,
+    ):
+        return False
+    return bool(re.search(r"(?:纸张|打印纸|商品|产品|实物|本体|型号|包装)", phrase))
+
+
+def _contains_fixed_orientation(text: str, *, composition_field: bool) -> bool:
+    """允许系统自主选横竖方向；拦截人工写死、硬性要求和未说明自主决策的方向。"""
+
+    for clause in _strong_clauses(text):
+        for match in ORIENTATION_TOKEN_RE.finditer(clause):
+            if _has_current_output_rebinding(clause, match.start(), match.end()):
+                return True
+            if _claim_is_negated_or_retracted(clause, match.start(), match.end()):
+                continue
+            if _is_deferred_delivery_spec(clause, match.start(), match.end()):
+                continue
+            phrase = _local_phrase(clause, match.start(), match.end())
+            reference_relations = list(REFERENCE_RELATION_RE.finditer(phrase))
+            if (
+                REFERENCE_SOURCE_RE.search(phrase)
+                and reference_relations
+                and all(
+                    _claim_is_negated_or_retracted(
+                        phrase, relation.start(), relation.end()
+                    )
+                    for relation in reference_relations
+                )
+            ):
+                continue
+            if _is_product_orientation(clause, match) or _is_reference_orientation_fact(clause, match):
+                continue
+            window = clause[max(0, match.start() - 64) : min(len(clause), match.end() + 64)]
+            autonomous = _has_autonomous_frame_decision(window)
+            absolute_cues = list(ABSOLUTE_ORIENTATION_CUE_RE.finditer(phrase))
+            positive_absolute_cues = [
+                cue
+                for cue in absolute_cues
+                if not _is_directly_negated(phrase, cue.start())
+            ]
+            has_positive_absolute_cue = bool(positive_absolute_cues)
+            has_positive_hard_cue = any(
+                cue.group(0) not in {"定为", "设为", "设置为", "呈现", "交付"}
+                and not (
+                    cue.group(0) == "需要"
+                    and re.search(r"(?:任务|场景|商品|内容)需要$", phrase[: cue.end()])
+                )
+                for cue in positive_absolute_cues
+            )
+            if autonomous and not has_positive_hard_cue:
+                continue
+            has_action = bool(ORIENTATION_ACTION_RE.search(phrase))
+            has_output = bool(OUTPUT_OBJECT_RE.search(phrase))
+            has_fixed_result = bool(
+                re.search(
+                    r"(?:横着|竖着)[^，。；\n]{0,6}(?:排|排成)[^，。；\n]{0,4}(?:就行|即可)",
+                    phrase,
+                )
+            )
+            if has_positive_absolute_cue or has_action or has_output or (
+                composition_field and re.search(r"(?:构图|版式|画面|画幅|纸张)", phrase)
+            ) or has_fixed_result:
+                return True
+    return False
+
+
+def _contains_output_frame_autonomy_rule(
+    text: str, *, allow_visible_copy: bool = False
+) -> bool:
+    """拦截无数字但仍锁死输出画幅的表达。"""
+
+    # 最终文案是用户可见内容，允许它出现普通文案原文；构图、任务和
+    # 正向提示词仍必须保持输出画幅开放。
+    if allow_visible_copy:
+        return False
+    for clause in _strong_clauses(text):
+        for match in OUTPUT_FRAME_AUTONOMY_RE.finditer(clause):
+            candidate_end = match.end("action")
+            # “固定为1:1的方案已取消”这类旧方案说明，会把数值放在
+            # 新增无数字规则之后；把紧随其后的规格并入候选范围，复用
+            # 既有的撤回判断，避免把已取消的旧约束误判为当前要求。
+            for pattern in (
+                FRAME_RATIO_RE,
+                DIMENSION_PAIR_RE,
+                PAPER_FORMAT_RE,
+                ORIENTATION_TOKEN_RE,
+            ):
+                following = pattern.search(clause, candidate_end)
+                if following and following.start() <= candidate_end + 16:
+                    candidate_end = max(candidate_end, following.end())
+            if _claim_is_negated_or_retracted(
+                clause, match.start("action"), candidate_end
+            ):
+                continue
+            phrase = _local_phrase(clause, match.start(), match.end())
+            # “画布本体/商品画面”等是商品自身事实时，不把其属性当成
+            # 当前输出画幅约束；带“输出/成图/画面”等对象词的仍会命中。
+            if not re.search(r"(?:输出|成图|成片|出图|最终|当前|本次)", phrase):
+                target_start = match.start("target")
+                product_prefix = clause[:target_start]
+                if re.search(
+                    r"(?:商品|产品|货品|实物|本体|画布本体|包装)"
+                    r"[^，。！？!?；;\n]{0,12}$",
+                    product_prefix,
+                ):
+                    continue
+                # “画幅不得改变商品比例/结构”表达的是保护商品事实，
+                # 不是锁死输出外框；后续商品事实规则继续负责校验。
+                after_action = clause[match.end("action") :]
+                if re.match(
+                    r"\s*(?:商品|产品|货品|实物|本体)(?:自身|本身)?"
+                    r"(?:比例|结构|轮廓|颜色|材质|文字|原文|尺寸|形态)",
+                    after_action,
+                ):
+                    continue
+            return True
+    return False
+
+
+def _contains_fixed_canvas_spec(
+    text: str, *, composition_field: bool, allow_visible_copy: bool = False
+) -> bool:
+    """拦截固定输出外框，同时保留商品事实与摄影参数。"""
+
+    normalized = _normalize_security_text(text)
+    if _contains_output_frame_autonomy_rule(
+        normalized, allow_visible_copy=allow_visible_copy
+    ):
+        return True
+    if _contains_subject_occupancy(normalized):
+        return True
+    if _contains_reference_frame_inheritance(normalized, composition_field=composition_field):
+        return True
+
+    if _contains_fixed_orientation(normalized, composition_field=composition_field):
+        return True
+
+    for clause in _strong_clauses(normalized):
+        for match in PAPER_FORMAT_RE.finditer(clause):
+            if _has_current_output_rebinding(clause, match.start(), match.end()):
+                return True
+            if _claim_is_negated_or_retracted(clause, match.start(), match.end()):
+                continue
+            if _is_deferred_delivery_spec(clause, match.start(), match.end()):
+                continue
+            if _is_product_paper_format(clause, match):
+                continue
+            if composition_field or _has_output_context(clause, match.start(), match.end()):
+                return True
+
+        for match in SQUARE_FRAME_RE.finditer(clause):
+            if _has_current_output_rebinding(clause, match.start(), match.end()):
+                return True
+            if _claim_is_negated_or_retracted(
+                clause, match.start(), match.end()
+            ) or _is_deferred_delivery_spec(clause, match.start(), match.end()):
+                continue
+            phrase = _local_phrase(clause, match.start(), match.end())
+            if _has_product_marker(phrase) and not _span_targets_output(
+                clause, match.start(), match.end()
+            ):
+                continue
+            if composition_field or _has_output_context(clause, match.start(), match.end()):
+                return True
+
+        for match in QUALITATIVE_FRAME_RE.finditer(clause):
+            if _claim_is_negated_or_retracted(clause, match.start(), match.end()):
+                continue
+            if not _has_product_marker(_local_phrase(clause, match.start(), match.end())):
+                return True
+
+        for match in QUALITATIVE_ORIENTATION_RE.finditer(clause):
+            if _claim_is_negated_or_retracted(clause, match.start(), match.end()):
+                continue
+            if not _has_product_marker(_local_phrase(clause, match.start(), match.end())):
+                return True
+
+        for match in FRAME_RATIO_RE.finditer(clause):
+            if _has_current_output_rebinding(clause, match.start(), match.end()):
+                return True
+            if _claim_is_negated_or_retracted(
+                clause, match.start(), match.end()
+            ) or _is_deferred_delivery_spec(
+                clause, match.start(), match.end()
+            ) or _is_product_ratio(clause, match):
+                continue
+            if composition_field or _has_output_context(clause, match.start(), match.end()):
+                return True
+
+        for pattern in (
+            SCALAR_RATIO_RE,
+            RATIO_RANGE_RE,
+            NATURAL_AXIS_RATIO_RE,
+            AXIS_PAIR_FRACTION_RE,
+            BOUNDED_SCALAR_RATIO_RE,
+            AXIS_DIFFERENCE_RE,
+        ):
+            for match in pattern.finditer(clause):
+                if _has_current_output_rebinding(clause, match.start(), match.end()):
+                    return True
+                if _claim_is_negated_or_retracted(
+                    clause, match.start(), match.end()
+                ) or _is_deferred_delivery_spec(
+                    clause, match.start(), match.end()
+                ) or _is_product_ratio(clause, match):
+                    continue
+                if composition_field or _has_output_context(clause, match.start(), match.end()):
+                    return True
+
+        for pattern in (
+            DIMENSION_PAIR_RE,
+            AXIS_DIMENSION_PAIR_RE,
+            SINGLE_DIMENSION_RE,
+            RESOLUTION_CLASS_RE,
+        ):
+            for match in pattern.finditer(clause):
+                if _has_current_output_rebinding(clause, match.start(), match.end()):
+                    return True
+                if _claim_is_negated_or_retracted(
+                    clause, match.start(), match.end()
+                ) or _is_deferred_delivery_spec(
+                    clause, match.start(), match.end()
+                ) or _is_product_dimension(clause, match):
+                    continue
+                if composition_field or _has_output_context(clause, match.start(), match.end()):
+                    return True
+
+        for match in RELATIVE_DIMENSION_RE.finditer(clause):
+            if _has_current_output_rebinding(clause, match.start(), match.end()):
+                return True
+            if _claim_is_negated_or_retracted(
+                clause, match.start(), match.end()
+            ) or _is_deferred_delivery_spec(
+                clause, match.start(), match.end()
+            ) or _is_product_ratio(clause, match):
+                continue
+            prefix = clause[max(0, match.start() - 12) : match.start()]
+            if (
+                re.search(r"(?:商品|产品|货品|包装|本体)(?:的)?\s*$", prefix)
+                and not _span_targets_output(clause, match.start(), match.end())
+            ):
+                continue
+            if composition_field or _has_output_context(clause, match.start(), match.end()):
+                return True
+
+        for match in OUTPUT_DENSITY_RE.finditer(clause):
+            if _has_current_output_rebinding(clause, match.start(), match.end()):
+                return True
+            if _claim_is_negated_or_retracted(
+                clause, match.start(), match.end()
+            ) or _is_deferred_delivery_spec(
+                clause, match.start(), match.end()
+            ) or _is_product_density(clause, match):
+                continue
+            if composition_field or _has_output_context(clause, match.start(), match.end()):
+                return True
+    return False
 
 
 def _erase_preserved_originals(text: str) -> str:
@@ -1805,6 +3324,28 @@ def validate_storyboard(markdown: str, *, partial: bool = False) -> list[str]:
                 allow_product_identity=field_name == "商品锁定",
             ):
                 raise StoryboardValidationError(f"{storyboard_id}的{field_name}必须以中文描述为主")
+
+        fixed_spec_location = next(
+            (
+                field_name
+                for field_name in CANVAS_RULE_FIELDS
+                if field_name in fields
+                if _contains_fixed_canvas_spec(
+                    fields[field_name],
+                    composition_field=field_name in COMPOSITION_FIELDS,
+                    allow_visible_copy=field_name == "最终文案",
+                )
+            ),
+            None,
+        )
+        if fixed_spec_location or _contains_fixed_canvas_spec(
+            positive, composition_field=False
+        ):
+            location = fixed_spec_location or "正向提示词"
+            raise StoryboardValidationError(
+                f"{storyboard_id}的{location}不得写入固定画幅、输出像素或主体占画面百分比；"
+                "用户或平台明确要求的交付规格只写入生产与后期"
+            )
 
         output_object = fields["输出对象"]
         expected_prefix = OUTPUT_ID_PREFIXES.get(output_object)

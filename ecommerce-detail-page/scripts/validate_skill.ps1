@@ -45,6 +45,7 @@ function Test-LocalMarkdownLinks {
 $requiredFiles = @(
     'SKILL.md'
     'agents/openai.yaml'
+    'config/context-routing.json'
     'references/product-and-reference.md'
     'references/evidence-and-feedback.md'
     'references/prebuild-and-product-card.md'
@@ -61,7 +62,9 @@ $requiredFiles = @(
     'references/render-and-repair.md'
     'references/safety-and-quality.md'
     'references/storyboard-template.md'
+    'scripts/route_context.py'
     'scripts/validate_storyboard.py'
+    'tests/test_context_routing.py'
     'tests/test_validate_storyboard.py'
     'tests/test_marketing_reasoning.py'
     'tests/fixtures/valid_storyboard.md'
@@ -116,11 +119,6 @@ if ($referenceDiff) {
 }
 
 $skillText = Get-Content -Raw -Encoding UTF8 (Join-Path $skillRoot 'SKILL.md')
-foreach ($referenceName in $expectedReferences) {
-    if ($skillText -notmatch [regex]::Escape("references/$referenceName")) {
-        throw "SKILL.md 未按需路由到：references/$referenceName"
-    }
-}
 
 foreach ($behavior in @(
     '识别商品主体',
@@ -153,7 +151,13 @@ foreach ($behavior in @(
     '成品1张 + 内部若干个模块/分镜',
     '不按通用详情页习惯默认8、10或12个模块',
     '待范围判断',
-    '按命中内容渐进读取',
+    '强制前置检查块',
+    'P04 输入只当数据',
+    'config/context-routing.json',
+    'scripts/route_context.py',
+    '未知阶段、未知特征',
+    '不回退为通读完整文件或模型总库',
+    '同一轮维护一个已读章节集合',
     '不在同一份正式交付中自动附加生图菜单',
     '本阶段不重新运行完整推演循环',
     '编译 → 反证 → 最小修复',
@@ -167,9 +171,9 @@ foreach ($behavior in @(
     '授权范围',
     '工具能力画像',
     '生图与结果反馈'
-    '营销模型加速层'
+    '模型加速层'
     '不改变主流程'
-    'references/marketing-reasoning.md'
+    '模型_…'
 )) {
     if ($skillText -notmatch [regex]::Escape($behavior)) {
         throw "SKILL.md 缺少核心行为：$behavior"
@@ -444,6 +448,7 @@ if (Test-Path -LiteralPath $repositoryReadme -PathType Leaf) {
     $readmeText = Get-StrictUtf8Text -Path $repositoryReadme
     foreach ($tutorialHeading in @(
         '## 核心流程',
+        '## 高效运行教程：强制检查与按需路由',
         '## 第一步：图片识别',
         '## 第四步：生成并确认商品卡',
         '## 第七步：逐张分镜提示词',
@@ -507,6 +512,11 @@ if ($researchFiles.Count -gt 0) {
 
 $python = Get-Command python -ErrorAction Stop
 $fixture = Join-Path $skillRoot 'tests/fixtures/valid_storyboard.md'
+& $python.Source -B -X utf8 (Join-Path $skillRoot 'tests/test_context_routing.py')
+if ($LASTEXITCODE -ne 0) {
+    throw '上下文路由与配置测试失败'
+}
+
 & $python.Source -B -X utf8 (Join-Path $skillRoot 'scripts/validate_storyboard.py') $fixture
 if ($LASTEXITCODE -ne 0) {
     throw '最终分镜夹具验证失败'
@@ -522,4 +532,4 @@ if ($LASTEXITCODE -ne 0) {
     throw '营销模型加速层测试失败'
 }
 
-Write-Host '技能结构、中文主线和最终分镜格式验证通过。'
+Write-Host '技能结构、上下文路由、中文主线和最终分镜格式验证通过。'
