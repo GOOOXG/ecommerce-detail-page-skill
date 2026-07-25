@@ -60,7 +60,7 @@ def make_storyboard(frames: list[str], quantity_note: str | None = None) -> str:
 
 
 class StoryboardValidatorTests(unittest.TestCase):
-    def test_runtime_guidance_uses_autonomous_layout_and_copy(self) -> None:
+    def test_runtime_guidance_uses_autonomous_layout_and_default_product_copy(self) -> None:
         repository_readme = ROOT.parent / "README.md"
         runtime_paths = [
             repository_readme,
@@ -87,9 +87,14 @@ class StoryboardValidatorTests(unittest.TestCase):
         self.assertIn("不限制输出长宽比", runtime_text)
         self.assertIn("参考图的宽高关系不作为输出画面约束", runtime_text)
         self.assertIn("系统根据商品特征、使用场景、输出位置、信息层级和裁切风险自主决定", runtime_text)
-        self.assertIn("自主决定是否使用文案", runtime_text)
-        self.assertIn("`最终文案`由AI自主决定", template)
-        self.assertIn("文案原文、信息层级、位置与视觉效果", template)
+        self.assertNotIn("自主决定是否使用文案", runtime_text)
+        self.assertIn("默认生成可见卖点文案", runtime_text)
+        self.assertIn("已确认商品卡中的采用卖点", runtime_text)
+        self.assertIn("不得偏移原始信息维度", runtime_text)
+        self.assertIn("用户明确选择“无文案”", runtime_text)
+        self.assertIn("`最终文案`在正常销售画面中默认启用", template)
+        self.assertIn("措辞、俏皮或柔和等语气、节奏、层级、位置", template)
+        self.assertIn("- 最终文案：【", FIXTURE.read_text(encoding="utf-8"))
 
         template_frame = template.split("````markdown\n", 1)[1].split("\n````", 1)[0]
         fixture_text = FIXTURE.read_text(encoding="utf-8")
