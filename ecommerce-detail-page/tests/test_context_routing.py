@@ -131,6 +131,15 @@ class ContextRoutingTests(unittest.TestCase):
             sections,
         )
 
+    def test_storyboard_compilation_loads_smart_copy_compiler(self):
+        result = self.router.resolve_context("分镜编译", [], self.policy)
+        sections = self.section_keys(result)
+
+        self.assertIn(
+            ("references/prompt-writing.md", "## 智能卖点文案编译"),
+            sections,
+        )
+
     def test_unknown_feature_never_falls_back_to_full_files(self):
         with self.assertRaises(self.router.RoutingError):
             self.router.resolve_context("图组规划", ["图型_不存在"], self.policy)

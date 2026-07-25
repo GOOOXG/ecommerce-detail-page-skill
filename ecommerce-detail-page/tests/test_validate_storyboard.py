@@ -92,13 +92,26 @@ class StoryboardValidatorTests(unittest.TestCase):
         self.assertIn("已确认商品卡中的采用卖点", runtime_text)
         self.assertIn("不得偏移原始信息维度", runtime_text)
         self.assertIn("用户明确选择“无文案”", runtime_text)
+        self.assertIn(
+            "卖点源 → 本张任务 → 买家此刻问题 → 核心信息核 → 表达路线 → 内部候选 → 语义回溯 → 视觉成稿",
+            runtime_text,
+        )
+        self.assertIn("用户不需要输入阶段键、特征键、模型类别或任何命令", runtime_text)
+        self.assertIn("触发依据是完整语义，不是关键词匹配", runtime_text)
         self.assertIn("`最终文案`在正常销售画面中默认启用", template)
+        self.assertIn("先判断本张要回答的买家问题和唯一文案职责", template)
+        self.assertIn("已确认商品卡的核心信息核选择表达路线", template)
         self.assertIn("措辞、俏皮或柔和等语气、节奏、层级、位置", template)
         self.assertIn("- 最终文案：【", FIXTURE.read_text(encoding="utf-8"))
 
         template_frame = template.split("````markdown\n", 1)[1].split("\n````", 1)[0]
         fixture_text = FIXTURE.read_text(encoding="utf-8")
         readme = repository_readme.read_text(encoding="utf-8")
+        self.assertIn("## 高效运行教程：直接说需求，AI按需处理", readme)
+        self.assertIn("### 直接说需求即可", readme)
+        self.assertNotIn("## 高效运行教程：强制检查与按需路由", readme)
+        self.assertNotIn("scripts/route_context.py --阶段", readme)
+        self.assertNotIn("scripts/route_context.py --特征", readme)
         readme_example = readme.split("## 最终分镜提示词示例", 1)[1].split(
             "## 返修方法", 1
         )[0]
